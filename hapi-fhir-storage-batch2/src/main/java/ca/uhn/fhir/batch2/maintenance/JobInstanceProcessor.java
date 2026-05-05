@@ -109,6 +109,10 @@ public class JobInstanceProcessor {
 			autoCancelJobIfItHasBeenBuildingForTooLong(theInstance);
 			return;
 		}
+		if (theInstance.getStatus() == StatusEnum.PAUSED) {
+			ourLog.debug("Job {} is PAUSED. Skipping chunk scheduling.", theInstance.getInstanceId());
+			return;
+		}
 
 		JobDefinition<? extends IModelJson> jobDefinition =
 				myJobDefinitionegistry.getJobDefinitionOrThrowException(theInstance);

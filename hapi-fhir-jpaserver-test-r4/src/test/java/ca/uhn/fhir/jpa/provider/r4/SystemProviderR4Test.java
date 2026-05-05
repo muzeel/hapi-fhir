@@ -19,6 +19,8 @@ import ca.uhn.fhir.jpa.rp.r4.PractitionerResourceProvider;
 import ca.uhn.fhir.jpa.rp.r4.PractitionerRoleResourceProvider;
 import ca.uhn.fhir.jpa.rp.r4.ServiceRequestResourceProvider;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
+import ca.uhn.fhir.jpa.entity.Batch2JobInstanceEntity;
+import ca.uhn.fhir.jpa.entity.Batch2WorkChunkEntity;
 import ca.uhn.fhir.jpa.test.BaseJpaR4Test;
 import ca.uhn.fhir.rest.api.CacheControlDirective;
 import ca.uhn.fhir.rest.api.Constants;
@@ -93,6 +95,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Date;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -983,6 +987,136 @@ public class SystemProviderR4Test extends BaseJpaR4Test {
 		List<DiagnosticReport> diags = BundleUtil.toListOfResourcesOfType(myFhirContext, diagBundle, DiagnosticReport.class);
 		assertThat(diags).hasSize(1);
 		assertEquals(dKeepId, diags.get(0).getIdElement());
+	}
+
+	@Test
+	public void testBatch2JobListAndDetailsOperations() {
+		String instanceId = runInTransaction(() -> {
+			Batch2JobInstanceEntity instance = new Batch2JobInstanceEntity();
+			instance.setId(UUID.randomUUID().toString());
+			instance.setDefinitionId("test-job-def");
+			instance.setDefinitionVersion(1);
+			instance.setStatus(ca.uhn.fhir.batch2.model.StatusEnum.IN_PROGRESS);
+			instance.setCreateTime(new Date());
+			instance.setStartTime(new Date());
+			instance.setProgress(0.42);
+			instance.setCombinedRecordsProcessed(123);
+			instance.setEstimatedTimeRemaining("00:10:00");
+			instance.setParams("{\"test\":true}");
+			myJobInstanceRepository.save(instance);
+
+			Batch2WorkChunkEntity completed = new Batch2WorkChunkEntity();
+			completed.setId(UUID.randomUUID().toString());
+			completed.setInstanceId(instance.getId());
+			completed.setJobDefinitionId("test-job-def");
+			completed.setJobDefinitionVersion(1);
+			completed.setTargetStepId("step-1");
+			completed.setSequence(0);
+			completed.setCreateTime(new Date());
+			completed.setStartTime(new Date());
+			completed.setStatus(ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.COMPLETED);
+			myWorkChunkRepository.save(completed);
+
+			Batch2WorkChunkEntity ready = new Batch2WorkChunkEntity();
+			ready.setId(UUID.randomUUID().toString());
+			ready.setInstanceId(instance.getId());
+			ready.setJobDefinitionId("test-job-def");
+			ready.setJobDefinitionVersion(1);
+			ready.setTargetStepId("step-1");
+			ready.setSequence(1);
+			ready.setCreateTime(new Date());
+			ready.setStartTime(new Date());
+			ready.setStatus(ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.READY);
+			myWorkChunkRepository.save(ready);
+			return instance.getId();
+		});
+
+		Parameters listInput = new Parameters();
+		listInput.addParameter(ProviderConstants.OPERATION_BATCH2_PARAM_JOB_DEFINITION_ID, "test-job-def");
+		Parameters listResult = myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_LIST)
+				.withParameters(listInput)
+				.execute();
+		assertThat(listResult.getParameter()).isNotEmpty();
+		assertThat(myFhirContext.newJsonParser().encodeResourceToString(listResult)).contains(instanceId);
+
+		Parameters getInput = new Parameters();
+		getInput.addParameter(ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, instanceId);
+		Parameters getResult = myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_GET)
+				.withParameters(getInput)
+				.execute();
+		assertThat(myFhirContext.newJsonParser().encodeResourceToString(getResult)).contains("\"IN_PROGRESS\"");
+		assertThat(myFhirContext.newJsonParser().encodeResourceToString(getResult)).contains(instanceId);
+
+		Parameters chunksResult = myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_GET_CHUNKS)
+				.withParameters(getInput)
+				.execute();
+		String chunksJson = myFhirContext.newJsonParser().encodeResourceToString(chunksResult);
+		assertThat(chunksJson).contains("COMPLETED");
+		assertThat(chunksJson).contains("READY");
+	}
+
+	@Test
+	public void testBatch2PauseResumeCancelOperations() {
+		String instanceId = runInTransaction(() -> {
+			Batch2JobInstanceEntity instance = new Batch2JobInstanceEntity();
+			instance.setId(UUID.randomUUID().toString());
+			instance.setDefinitionId("ops-job-def");
+			instance.setDefinitionVersion(1);
+			instance.setStatus(ca.uhn.fhir.batch2.model.StatusEnum.QUEUED);
+			instance.setCreateTime(new Date());
+			instance.setStartTime(new Date());
+			instance.setParams("{\"ops\":true}");
+			myJobInstanceRepository.save(instance);
+			return instance.getId();
+		});
+
+		Parameters input = new Parameters();
+		input.addParameter(ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, instanceId);
+
+		Parameters pauseResult = myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_PAUSE)
+				.withParameters(input)
+				.execute();
+		assertThat(myFhirContext.newJsonParser().encodeResourceToString(pauseResult)).contains("\"valueBoolean\":true");
+
+		runInTransaction(
+				() -> assertEquals(
+						ca.uhn.fhir.batch2.model.StatusEnum.PAUSED,
+						myJobInstanceRepository.findById(instanceId).orElseThrow().getStatus()));
+
+		Parameters resumeResult = myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_RESUME)
+				.withParameters(input)
+				.execute();
+		assertThat(myFhirContext.newJsonParser().encodeResourceToString(resumeResult)).contains("\"valueBoolean\":true");
+
+		runInTransaction(
+				() -> assertEquals(
+						ca.uhn.fhir.batch2.model.StatusEnum.QUEUED,
+						myJobInstanceRepository.findById(instanceId).orElseThrow().getStatus()));
+
+		Parameters cancelResult = myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_CANCEL)
+				.withParameters(input)
+				.execute();
+		assertThat(myFhirContext.newJsonParser().encodeResourceToString(cancelResult)).contains("\"valueBoolean\":true");
+
+		runInTransaction(() -> assertTrue(myJobInstanceRepository.findById(instanceId).orElseThrow().isCancelled()));
 	}
 
 	private Bundle getAllResourcesOfType(String theResourceName) {

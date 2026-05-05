@@ -261,6 +261,44 @@ public class ProviderConstants {
 	public static final String OPERATION_UNDO_REPLACE_REFERENCES = "$hapi.fhir.undo-replace-references";
 
 	/**
+	 * Operation name for listing Batch2 jobs.
+	 */
+	public static final String OPERATION_BATCH2_JOB_LIST = "$hapi.fhir.batch2-job-list";
+
+	/**
+	 * Operation name for fetching Batch2 job status/details.
+	 */
+	public static final String OPERATION_BATCH2_JOB_GET = "$hapi.fhir.batch2-job-get";
+
+	/**
+	 * Operation name for fetching Batch2 work chunk status summary.
+	 */
+	public static final String OPERATION_BATCH2_JOB_GET_CHUNKS = "$hapi.fhir.batch2-job-get-chunks";
+
+	/**
+	 * Operation name for cancelling a Batch2 job.
+	 */
+	public static final String OPERATION_BATCH2_JOB_CANCEL = "$hapi.fhir.batch2-job-cancel";
+
+	/**
+	 * Operation name for pausing a Batch2 job.
+	 */
+	public static final String OPERATION_BATCH2_JOB_PAUSE = "$hapi.fhir.batch2-job-pause";
+
+	/**
+	 * Operation name for resuming a Batch2 job.
+	 */
+	public static final String OPERATION_BATCH2_JOB_RESUME = "$hapi.fhir.batch2-job-resume";
+
+	public static final String OPERATION_BATCH2_PARAM_JOB_ID = "jobId";
+	public static final String OPERATION_BATCH2_PARAM_JOB_DEFINITION_ID = "jobDefinitionId";
+	public static final String OPERATION_BATCH2_PARAM_STATUS = "status";
+	public static final String OPERATION_BATCH2_PARAM_FROM = "from";
+	public static final String OPERATION_BATCH2_PARAM_TO = "to";
+	public static final String OPERATION_BATCH2_PARAM_PAGE_START = "pageStart";
+	public static final String OPERATION_BATCH2_PARAM_BATCH_SIZE = "batchSize";
+
+	/**
 	 * Parameter for source reference of the "$hapi.fhir.replace-references" operation
 	 */
 	public static final String OPERATION_REPLACE_REFERENCES_PARAM_SOURCE_REFERENCE_ID = "source-reference-id";

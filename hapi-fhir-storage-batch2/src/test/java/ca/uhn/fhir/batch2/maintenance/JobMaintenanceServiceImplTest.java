@@ -482,6 +482,31 @@ public class JobMaintenanceServiceImplTest extends BaseBatch2Test {
 	}
 
 	@Test
+	public void testMaintenancePass_whenInstancePaused_readyChunksAreNotQueued() {
+		// setup
+		List<WorkChunk> chunks = List.of(
+			createWorkChunkStep2().setStatus(WorkChunkStatusEnum.READY),
+			createWorkChunkStep2().setStatus(WorkChunkStatusEnum.READY)
+		);
+		JobInstance instance = createInstance();
+		instance.setStatus(StatusEnum.PAUSED);
+
+		myJobDefinitionRegistry.addJobDefinition(createJobDefinition());
+		when(myJobPersistence.fetchInstances(anyInt(), eq(0))).thenReturn(List.of(instance));
+		when(myJobPersistence.fetchInstance(eq(INSTANCE_ID))).thenReturn(Optional.of(instance));
+		when(myJobPersistence.fetchAllWorkChunksIterator(eq(INSTANCE_ID), anyBoolean())).thenReturn(chunks.iterator());
+		when(myJobPersistence.fetchAllWorkChunkMetadataForJobInStates(any(Pageable.class), eq(INSTANCE_ID), any()))
+			.thenReturn(getPageOfData(chunks));
+
+		// execute
+		mySvc.runMaintenancePass();
+
+		// verify
+		verify(myJobPersistence, never()).enqueueWorkChunkForProcessing(anyString(), any());
+		verify(myWorkChannelProducer, never()).send(any(JobWorkNotificationJsonMessage.class));
+	}
+
+	@Test
 	public void testMaintenancePass_whenUpdateFails_skipsWorkChunkAndLogs() {
 		// setup
 		List<WorkChunk> chunks = List.of(

@@ -19,6 +19,12 @@
  */
 package ca.uhn.fhir.jpa.provider;
 
+import ca.uhn.fhir.batch2.api.IJobCoordinator;
+import ca.uhn.fhir.batch2.api.JobOperationResultJson;
+import ca.uhn.fhir.batch2.model.BatchInstanceStatusDTO;
+import ca.uhn.fhir.batch2.model.BatchWorkChunkStatusDTO;
+import ca.uhn.fhir.batch2.model.JobInstance;
+import ca.uhn.fhir.batch2.models.JobInstanceFetchRequest;
 import ca.uhn.fhir.i18n.Msg;
 import ca.uhn.fhir.interceptor.api.IInterceptorBroadcaster;
 import ca.uhn.fhir.interceptor.model.ReadPartitionIdRequestDetails;
@@ -48,8 +54,10 @@ import org.hl7.fhir.instance.model.api.IBaseParameters;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IPrimitiveType;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
 
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -68,6 +76,9 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 
 	@Autowired
 	private IInterceptorBroadcaster myInterceptorBroadcaster;
+
+	@Autowired
+	private IJobCoordinator myJobCoordinator;
 
 	@Description(
 			"Marks all currently existing resources of a given type, or all resources of all types, for reindexing.")
@@ -255,6 +266,151 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 		} finally {
 			endRequest(theRequestDetails);
 		}
+	}
+
+	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_LIST, idempotent = true)
+	@Description(shortDefinition = "Returns Batch2 jobs with optional filtering")
+	public IBaseParameters batch2JobList(
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_DEFINITION_ID, typeName = "string")
+					IPrimitiveType<String> theJobDefinitionId,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_STATUS, typeName = "code")
+					IPrimitiveType<String> theStatus,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, typeName = "string")
+					IPrimitiveType<String> theJobId,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_FROM, typeName = "instant")
+					IPrimitiveType<Date> theFrom,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_TO, typeName = "instant")
+					IPrimitiveType<Date> theTo,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_PAGE_START, typeName = "integer")
+					IPrimitiveType<Integer> thePageStart,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_BATCH_SIZE, typeName = "integer")
+					IPrimitiveType<Integer> theBatchSize) {
+		JobInstanceFetchRequest request = new JobInstanceFetchRequest();
+		request.setJobDefinitionId(getOptionalPrimitiveValue(theJobDefinitionId));
+		request.setJobStatus(getOptionalPrimitiveValue(theStatus));
+		request.setJobId(getOptionalPrimitiveValue(theJobId));
+		request.setJobCreateTimeFrom(getOptionalPrimitiveValue(theFrom));
+		request.setJobCreateTimeTo(getOptionalPrimitiveValue(theTo));
+		request.setPageStart(defaultIfNull(getOptionalPrimitiveValue(thePageStart), 0));
+		request.setBatchSize(defaultIfNull(getOptionalPrimitiveValue(theBatchSize), 20));
+		request.setSort(Sort.by(Sort.Direction.DESC, "myCreateTime"));
+
+		var page = myJobCoordinator.fetchAllJobInstances(request);
+		IBaseParameters retVal = ParametersUtil.newInstance(getContext());
+		ParametersUtil.addParameterToParametersInteger(getContext(), retVal, "total", (int) page.getTotalElements());
+		for (JobInstance next : page.getContent()) {
+			IBaseParameters nextParam = ParametersUtil.newInstance(getContext());
+			addJobInstanceToParameters(nextParam, next);
+			ParametersUtil.addParameterToParameters(getContext(), retVal, "job", nextParam);
+		}
+		return retVal;
+	}
+
+	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_GET, idempotent = true)
+	@Description(shortDefinition = "Returns detailed status for a Batch2 job")
+	public IBaseParameters batch2JobGet(
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
+					IPrimitiveType<String> theJobId) {
+		String jobId = requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID);
+		JobInstance instance = myJobCoordinator.getInstance(jobId);
+		BatchInstanceStatusDTO status = myJobCoordinator.getBatchInstanceStatus(jobId);
+		IBaseParameters retVal = ParametersUtil.newInstance(getContext());
+		addJobInstanceToParameters(retVal, instance);
+		ParametersUtil.addParameterToParametersString(getContext(), retVal, "instanceStatus", status.status().name());
+		return retVal;
+	}
+
+	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_GET_CHUNKS, idempotent = true)
+	@Description(shortDefinition = "Returns per-status chunk summary for a Batch2 job")
+	public IBaseParameters batch2JobGetChunks(
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
+					IPrimitiveType<String> theJobId) {
+		String jobId = requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID);
+		List<BatchWorkChunkStatusDTO> chunkStatuses = myJobCoordinator.getWorkChunkStatus(jobId);
+		IBaseParameters retVal = ParametersUtil.newInstance(getContext());
+		for (BatchWorkChunkStatusDTO next : chunkStatuses) {
+			IBaseParameters nextParam = ParametersUtil.newInstance(getContext());
+			ParametersUtil.addParameterToParametersString(getContext(), nextParam, "status", next.status.name());
+			ParametersUtil.addParameterToParametersInteger(getContext(), nextParam, "count", next.totalChunks);
+			ParametersUtil.addParameterToParameters(getContext(), retVal, "chunk", nextParam);
+		}
+		return retVal;
+	}
+
+	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_CANCEL, idempotent = false)
+	public IBaseParameters batch2JobCancel(
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
+					IPrimitiveType<String> theJobId) {
+		return toOperationResult(
+				myJobCoordinator.cancelInstance(requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
+	}
+
+	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_PAUSE, idempotent = false)
+	public IBaseParameters batch2JobPause(
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
+					IPrimitiveType<String> theJobId) {
+		return toOperationResult(
+				myJobCoordinator.pauseInstance(requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
+	}
+
+	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_RESUME, idempotent = false)
+	public IBaseParameters batch2JobResume(
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
+					IPrimitiveType<String> theJobId) {
+		return toOperationResult(
+				myJobCoordinator.resumeInstance(requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
+	}
+
+	private IBaseParameters toOperationResult(JobOperationResultJson theResult) {
+		IBaseParameters retVal = ParametersUtil.newInstance(getContext());
+		ParametersUtil.addParameterToParametersBoolean(getContext(), retVal, "success", theResult.getSuccess());
+		ParametersUtil.addParameterToParametersString(getContext(), retVal, "operation", theResult.getOperation());
+		ParametersUtil.addParameterToParametersString(getContext(), retVal, "message", theResult.getMessage());
+		return retVal;
+	}
+
+	private void addJobInstanceToParameters(IBaseParameters theTarget, JobInstance theInstance) {
+		ParametersUtil.addParameterToParametersString(getContext(), theTarget, "jobId", theInstance.getInstanceId());
+		ParametersUtil.addParameterToParametersString(
+				getContext(), theTarget, "jobDefinitionId", theInstance.getJobDefinitionId());
+		ParametersUtil.addParameterToParametersString(getContext(), theTarget, "status", theInstance.getStatus().name());
+		ParametersUtil.addParameterToParametersBoolean(getContext(), theTarget, "cancelled", theInstance.isCancelled());
+		ParametersUtil.addParameterToParametersString(
+				getContext(),
+				theTarget,
+				"progressPct",
+				Integer.toString((int) Math.round(theInstance.getProgress() * 100)));
+		if (theInstance.getCombinedRecordsProcessed() != null) {
+			ParametersUtil.addParameterToParametersInteger(
+					getContext(), theTarget, "recordsProcessed", theInstance.getCombinedRecordsProcessed());
+		}
+		if (theInstance.getEstimatedTimeRemaining() != null) {
+			ParametersUtil.addParameterToParametersString(
+					getContext(), theTarget, "estimatedTimeRemaining", theInstance.getEstimatedTimeRemaining());
+		}
+		if (theInstance.getCreateTime() != null) {
+			ParametersUtil.addParameterToParameters(
+					getContext(), theTarget, "createTime", ParametersUtil.createInstant(getContext(), theInstance.getCreateTime()));
+		}
+		if (theInstance.getStartTime() != null) {
+			ParametersUtil.addParameterToParameters(
+					getContext(), theTarget, "startTime", ParametersUtil.createInstant(getContext(), theInstance.getStartTime()));
+		}
+		if (theInstance.getEndTime() != null) {
+			ParametersUtil.addParameterToParameters(
+					getContext(), theTarget, "endTime", ParametersUtil.createInstant(getContext(), theInstance.getEndTime()));
+		}
+	}
+
+	private static String requireParam(IPrimitiveType<String> theParam, String theName) {
+		if (theParam == null || isBlank(theParam.getValue())) {
+			throw new InvalidRequestException(Msg.code(4000) + "Parameter '" + theName + "' is required");
+		}
+		return theParam.getValue();
+	}
+
+	private static <T> T getOptionalPrimitiveValue(IPrimitiveType<T> thePrimitive) {
+		return thePrimitive != null ? thePrimitive.getValue() : null;
 	}
 
 	private static void validateReplaceReferencesParams(
