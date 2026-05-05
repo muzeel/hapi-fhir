@@ -316,7 +316,8 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 		BatchInstanceStatusDTO status = myJobCoordinator.getBatchInstanceStatus(jobId);
 		IBaseParameters retVal = ParametersUtil.newInstance(getContext());
 		addJobInstanceToParameters(retVal, instance);
-		ParametersUtil.addParameterToParametersString(getContext(), retVal, "instanceStatus", status.status().name());
+		ParametersUtil.addParameterToParametersString(
+				getContext(), retVal, "instanceStatus", status.status().name());
 		return retVal;
 	}
 
@@ -331,7 +332,8 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 		for (BatchWorkChunkStatusDTO next : chunkStatuses) {
 			IBaseParameters nextParam = ParametersUtil.newInstance(getContext());
 			ParametersUtil.addParameterToParametersString(getContext(), nextParam, "status", next.status.name());
-			ParametersUtil.addParameterToParametersInteger(getContext(), nextParam, "count", next.totalChunks);
+			ParametersUtil.addParameterToParametersInteger(
+					getContext(), nextParam, "count", Math.toIntExact(next.totalChunks));
 			ParametersUtil.addParameterToParameters(getContext(), retVal, "chunk", nextParam);
 		}
 		return retVal;
@@ -341,24 +343,24 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 	public IBaseParameters batch2JobCancel(
 			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
 					IPrimitiveType<String> theJobId) {
-		return toOperationResult(
-				myJobCoordinator.cancelInstance(requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
+		return toOperationResult(myJobCoordinator.cancelInstance(
+				requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
 	}
 
 	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_PAUSE, idempotent = false)
 	public IBaseParameters batch2JobPause(
 			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
 					IPrimitiveType<String> theJobId) {
-		return toOperationResult(
-				myJobCoordinator.pauseInstance(requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
+		return toOperationResult(myJobCoordinator.pauseInstance(
+				requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
 	}
 
 	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_RESUME, idempotent = false)
 	public IBaseParameters batch2JobResume(
 			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
 					IPrimitiveType<String> theJobId) {
-		return toOperationResult(
-				myJobCoordinator.resumeInstance(requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
+		return toOperationResult(myJobCoordinator.resumeInstance(
+				requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
 	}
 
 	private IBaseParameters toOperationResult(JobOperationResultJson theResult) {
@@ -373,13 +375,11 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 		ParametersUtil.addParameterToParametersString(getContext(), theTarget, "jobId", theInstance.getInstanceId());
 		ParametersUtil.addParameterToParametersString(
 				getContext(), theTarget, "jobDefinitionId", theInstance.getJobDefinitionId());
-		ParametersUtil.addParameterToParametersString(getContext(), theTarget, "status", theInstance.getStatus().name());
-		ParametersUtil.addParameterToParametersBoolean(getContext(), theTarget, "cancelled", theInstance.isCancelled());
 		ParametersUtil.addParameterToParametersString(
-				getContext(),
-				theTarget,
-				"progressPct",
-				Integer.toString((int) Math.round(theInstance.getProgress() * 100)));
+				getContext(), theTarget, "status", theInstance.getStatus().name());
+		ParametersUtil.addParameterToParametersBoolean(getContext(), theTarget, "cancelled", theInstance.isCancelled());
+		ParametersUtil.addParameterToParametersString(getContext(), theTarget, "progressPct", Integer.toString((int)
+				Math.round(theInstance.getProgress() * 100)));
 		if (theInstance.getCombinedRecordsProcessed() != null) {
 			ParametersUtil.addParameterToParametersInteger(
 					getContext(), theTarget, "recordsProcessed", theInstance.getCombinedRecordsProcessed());
@@ -390,15 +390,24 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 		}
 		if (theInstance.getCreateTime() != null) {
 			ParametersUtil.addParameterToParameters(
-					getContext(), theTarget, "createTime", ParametersUtil.createInstant(getContext(), theInstance.getCreateTime()));
+					getContext(),
+					theTarget,
+					"createTime",
+					ParametersUtil.createInstant(getContext(), theInstance.getCreateTime()));
 		}
 		if (theInstance.getStartTime() != null) {
 			ParametersUtil.addParameterToParameters(
-					getContext(), theTarget, "startTime", ParametersUtil.createInstant(getContext(), theInstance.getStartTime()));
+					getContext(),
+					theTarget,
+					"startTime",
+					ParametersUtil.createInstant(getContext(), theInstance.getStartTime()));
 		}
 		if (theInstance.getEndTime() != null) {
 			ParametersUtil.addParameterToParameters(
-					getContext(), theTarget, "endTime", ParametersUtil.createInstant(getContext(), theInstance.getEndTime()));
+					getContext(),
+					theTarget,
+					"endTime",
+					ParametersUtil.createInstant(getContext(), theInstance.getEndTime()));
 		}
 	}
 

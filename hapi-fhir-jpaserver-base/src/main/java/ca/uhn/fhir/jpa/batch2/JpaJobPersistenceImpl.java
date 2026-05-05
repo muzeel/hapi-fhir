@@ -754,7 +754,12 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		int recordsChanged = myJobInstanceRepository.updateInstanceStatusIfIn(
 				theInstanceId,
 				StatusEnum.PAUSED,
-				Set.of(StatusEnum.BUILDING, StatusEnum.QUEUED, StatusEnum.IN_PROGRESS, StatusEnum.FINALIZE, StatusEnum.ERRORED));
+				Set.of(
+						StatusEnum.BUILDING,
+						StatusEnum.QUEUED,
+						StatusEnum.IN_PROGRESS,
+						StatusEnum.FINALIZE,
+						StatusEnum.ERRORED));
 		String operationString = "Pause job instance " + theInstanceId;
 		String messagePrefix = "Job instance <" + theInstanceId + ">";
 		if (recordsChanged > 0) {
@@ -765,11 +770,12 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		if (instance.isPresent()) {
 			if (instance.get().getStatus() == StatusEnum.PAUSED) {
 				return JobOperationResultJson.newFailure(
-					operationString, messagePrefix + " was already paused.  Nothing to do.");
+						operationString, messagePrefix + " was already paused.  Nothing to do.");
 			}
 			return JobOperationResultJson.newFailure(
 					operationString,
-					messagePrefix + " cannot be paused from status " + instance.get().getStatus());
+					messagePrefix + " cannot be paused from status "
+							+ instance.get().getStatus());
 		}
 
 		return JobOperationResultJson.newFailure(operationString, messagePrefix + " not found.");
@@ -779,9 +785,7 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public JobOperationResultJson resumeInstance(String theInstanceId) {
 		int recordsChanged = myJobInstanceRepository.updateInstanceStatusIfIn(
-				theInstanceId,
-				StatusEnum.QUEUED,
-				Set.of(StatusEnum.PAUSED));
+				theInstanceId, StatusEnum.QUEUED, Set.of(StatusEnum.PAUSED));
 		String operationString = "Resume job instance " + theInstanceId;
 		String messagePrefix = "Job instance <" + theInstanceId + ">";
 		if (recordsChanged > 0) {
@@ -791,12 +795,12 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		Optional<JobInstance> instance = fetchInstance(theInstanceId);
 		if (instance.isPresent()) {
 			if (instance.get().getStatus() == StatusEnum.QUEUED) {
-				return JobOperationResultJson.newFailure(
-					operationString, messagePrefix + " is already queued.");
+				return JobOperationResultJson.newFailure(operationString, messagePrefix + " is already queued.");
 			}
 			return JobOperationResultJson.newFailure(
 					operationString,
-					messagePrefix + " cannot be resumed from status " + instance.get().getStatus());
+					messagePrefix + " cannot be resumed from status "
+							+ instance.get().getStatus());
 		}
 
 		return JobOperationResultJson.newFailure(operationString, messagePrefix + " not found.");

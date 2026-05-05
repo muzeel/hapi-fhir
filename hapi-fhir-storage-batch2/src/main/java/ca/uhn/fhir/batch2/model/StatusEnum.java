@@ -203,7 +203,10 @@ public enum StatusEnum {
 		boolean canTransition;
 		switch (theOrigStatus) {
 			case BUILDING:
-				canTransition = theNewStatus == QUEUED || theNewStatus == PAUSED || theNewStatus == CANCELLED || theNewStatus == BUILDING;
+				canTransition = theNewStatus == QUEUED
+						|| theNewStatus == PAUSED
+						|| theNewStatus == CANCELLED
+						|| theNewStatus == BUILDING;
 				break;
 			case QUEUED:
 				// initial state can transition to anything
