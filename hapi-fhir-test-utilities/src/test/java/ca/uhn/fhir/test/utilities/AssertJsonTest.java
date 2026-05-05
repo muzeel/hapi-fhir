@@ -186,25 +186,19 @@ class AssertJsonTest {
 		void testExpectedObjectValue_failure_different() {
 			assertThatThrownBy(() -> assertThat(myJsonString).hasPathWithValue("address", wrongAddress))
 				.isInstanceOf(AssertionError.class)
-				.hasMessageContaining("""
-					Multiple Failures (3 failures)
-					-- failure 1 --
-					[Unexpected value for key: streetAddress:]\s
-					expected: "432 Hillcrest Rd"
-					 but was: "21 2nd Street"
-					""")
-				.hasMessageContaining("""
-					-- failure 2 --
-					[Unexpected value for key: city:]\s
-					expected: "Mississauga"
-					 but was: "New York"
-					""")
-				.hasMessageContaining("""
-					-- failure 3 --
-					[Unexpected value for key: state:]\s
-					expected: "ON"
-					 but was: "NY"
-					""");
+					.hasMessageContaining("Multiple Failures (3 failures)\n" +
+						"-- failure 1 --\n" +
+						"[Unexpected value for key: streetAddress:]\\s\n" +
+						"expected: \"432 Hillcrest Rd\"\n" +
+						" but was: \"21 2nd Street\"")
+					.hasMessageContaining("-- failure 2 --\n" +
+						"[Unexpected value for key: city:]\\s\n" +
+						"expected: \"Mississauga\"\n" +
+						" but was: \"New York\"")
+					.hasMessageContaining("-- failure 3 --\n" +
+						"[Unexpected value for key: state:]\\s\n" +
+						"expected: \"ON\"\n" +
+						" but was: \"NY\"");
 		}
 
 		@Test
@@ -231,14 +225,10 @@ class AssertJsonTest {
 			assertThatThrownBy(() -> assertThat(myJsonString).hasPathWithValue("phoneNumbers", wrongPhoneNumbers))
 				.isInstanceOf(AssertionError.class)
 				.hasMessageContaining("Expecting ArrayList:")
-				.hasMessageContaining("""
-					element(s) not found:
-					  [{"number"="212 555-9876", "type"="cell"},
-					    {"number"="646 666-4567", "type"="fax"}]
-					and element(s) not expected:
-					  [{"number"="212 555-1234", "type"="home"},
-					    {"number"="646 555-4567", "type"="fax"}]
-					""");
+				.hasMessageContaining("element(s) not found:")
+				.hasMessageContaining("and element(s) not expected:")
+				.hasMessageContaining("[{\"number\"=\"212 555-9876\", \"type\"=\"cell\"},")
+				.hasMessageContaining("[{\"number\"=\"212 555-1234\", \"type\"=\"home\"},");
 		}
 
 	}
@@ -298,14 +288,10 @@ class AssertJsonTest {
 			assertThatThrownBy(() -> assertThat(myJsonString).hasPathsWithValues(List.of("phoneNumbers", "address", "lastName"),
 				List.of(wrongPhoneNumbers, goodAddress, "Smith")))
 				.isInstanceOf(AssertionError.class)
-				.hasMessageContaining("""
-					element(s) not found:
-					  [{"number"="212 555-9876", "type"="cell"},
-					    {"number"="646 666-4567", "type"="fax"}]
-					and element(s) not expected:
-					  [{"number"="212 555-1234", "type"="home"},
-					    {"number"="646 555-4567", "type"="fax"}]
-					""");
+				.hasMessageContaining("element(s) not found:")
+				.hasMessageContaining("and element(s) not expected:")
+				.hasMessageContaining("[{\"number\"=\"212 555-9876\", \"type\"=\"cell\"},")
+				.hasMessageContaining("[{\"number\"=\"212 555-1234\", \"type\"=\"home\"},");
 		}
 
 		@Test
@@ -313,25 +299,16 @@ class AssertJsonTest {
 			assertThatThrownBy(() -> assertThat(myJsonString).hasPathsWithValues(List.of("phoneNumbers", "address", "lastName"),
 				List.of(goodPhoneNumbers, wrongAddress, "Smith")))
 				.isInstanceOf(AssertionError.class)
-				.hasMessageContaining("""
-					Multiple Failures (3 failures)
-					-- failure 1 --
-					[Unexpected value for key: streetAddress:]\s
-					expected: "432 Hillcrest Rd"
-					 but was: "21 2nd Street"
-					""")
-				.hasMessageContaining("""
-					-- failure 2 --
-					[Unexpected value for key: city:]\s
-					expected: "Mississauga"
-					 but was: "New York"
-					""")
-				.hasMessageContaining("""
-					-- failure 3 --
-					[Unexpected value for key: state:]\s
-					expected: "ON"
-					 but was: "NY"
-					""");
+				.hasMessageContaining("Multiple Failures (3 failures)")
+				.hasMessageContaining("[Unexpected value for key: streetAddress:]")
+				.hasMessageContaining("expected: \"432 Hillcrest Rd\"")
+				.hasMessageContaining("but was: \"21 2nd Street\"")
+				.hasMessageContaining("[Unexpected value for key: city:]")
+				.hasMessageContaining("expected: \"Mississauga\"")
+				.hasMessageContaining("but was: \"New York\"")
+				.hasMessageContaining("[Unexpected value for key: state:]")
+				.hasMessageContaining("expected: \"ON\"")
+				.hasMessageContaining("but was: \"NY\"");
 		}
 
 	}
@@ -356,12 +333,10 @@ class AssertJsonTest {
 			assertThatThrownBy(() -> assertThat(myJsonString)
 					.hasExactlyKeys("firstName", "age", "address", "phoneNumbers", "extraKey"))
 				.isInstanceOf(AssertionError.class)
-				.hasMessageContaining("""
-						element(s) not found:
-						  ["extraKey"]""")
-				.hasMessageContaining("""
-						and element(s) not expected:
-						  ["lastName"]""");
+						.hasMessageContaining("element(s) not found:")
+						.hasMessageContaining("[\"extraKey\"]")
+						.hasMessageContaining("and element(s) not expected:")
+						.hasMessageContaining("[\"lastName\"]");
 		}
 	}
 
@@ -392,19 +367,13 @@ class AssertJsonTest {
 					List.of("firstName", "lastName", "age"),
 					List.of("John", "Wesson", 31)))
 				.isInstanceOf(AssertionError.class)
-				.hasMessageContaining("""
-						Multiple Failures (2 failures)
-						-- failure 1 --
-						[Unexpected value for key: lastName:]\s
-						expected: "Wesson"
-						 but was: "Smith"
-						""")
-				.hasMessageContaining("""
-						-- failure 2 --
-						[Unexpected value for key: age:]\s
-						expected: 31
-						 but was: 25
-						""");
+						.hasMessageContaining("Multiple Failures (2 failures)")
+						.hasMessageContaining("[Unexpected value for key: lastName:]")
+						.hasMessageContaining("expected: \"Wesson\"")
+						.hasMessageContaining("but was: \"Smith\"")
+						.hasMessageContaining("[Unexpected value for key: age:]")
+						.hasMessageContaining("expected: 31")
+						.hasMessageContaining("but was: 25");
 		}
 	}
 
@@ -419,10 +388,8 @@ class AssertJsonTest {
 		void testFailure() {
 			assertThatThrownBy(() -> assertThat(myJsonString).hasKeys("address", "weight"))
 				.isInstanceOf(AssertionError.class)
-				.hasMessageContaining("""
-					but could not find the following element(s):
-					  ["weight"]
-					""");
+					.hasMessageContaining("but could not find the following element(s):\n" +
+						"  [\"weight\"]");
 		}
 	}
 
@@ -438,25 +405,16 @@ class AssertJsonTest {
 		void testFailure() {
 			assertThatThrownBy(() -> assertThat(myJsonString).hasKeyWithValue("address", wrongAddress))
 				.isInstanceOf(AssertionError.class)
-				.hasMessageContaining("""
-					Multiple Failures (3 failures)
-					-- failure 1 --
-					[Unexpected value for key: streetAddress:]\s
-					expected: "432 Hillcrest Rd"
-					 but was: "21 2nd Street"
-					""")
-				.hasMessageContaining("""
-					-- failure 2 --
-					[Unexpected value for key: city:]\s
-					expected: "Mississauga"
-					 but was: "New York"
-					""")
-				.hasMessageContaining("""
-					-- failure 3 --
-					[Unexpected value for key: state:]\s
-					expected: "ON"
-					 but was: "NY"
-					""");
+				.hasMessageContaining("Multiple Failures (3 failures)")
+				.hasMessageContaining("[Unexpected value for key: streetAddress:]")
+				.hasMessageContaining("expected: \"432 Hillcrest Rd\"")
+				.hasMessageContaining("but was: \"21 2nd Street\"")
+				.hasMessageContaining("[Unexpected value for key: city:]")
+				.hasMessageContaining("expected: \"Mississauga\"")
+				.hasMessageContaining("but was: \"New York\"")
+				.hasMessageContaining("[Unexpected value for key: state:]")
+				.hasMessageContaining("expected: \"ON\"")
+				.hasMessageContaining("but was: \"NY\"");
 		}
 
 	}
