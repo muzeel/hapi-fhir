@@ -221,6 +221,16 @@ public class JobCoordinatorImpl implements IJobCoordinator {
 	}
 
 	@Override
+	public JobOperationResultJson pauseInstance(String theInstanceId) throws ResourceNotFoundException {
+		return myJobPersistence.pauseInstance(theInstanceId);
+	}
+
+	@Override
+	public JobOperationResultJson resumeInstance(String theInstanceId) throws ResourceNotFoundException {
+		return myJobPersistence.resumeInstance(theInstanceId);
+	}
+
+	@Override
 	public void addAttachmentToBuildingJob(String theInstanceId, AttachmentDetails theAttachmentDetails) {
 
 		/*

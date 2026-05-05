@@ -120,6 +120,20 @@ public interface IJobCoordinator {
 	void enqueueBuildingJobForExecution(String theInstanceId);
 
 	/**
+	 * Pauses a job instance so it will not be scheduled for further processing until resumed.
+	 *
+	 * @param theInstanceId The instance ID
+	 */
+	JobOperationResultJson pauseInstance(String theInstanceId) throws ResourceNotFoundException;
+
+	/**
+	 * Resumes a paused job instance by moving it back to QUEUED state.
+	 *
+	 * @param theInstanceId The instance ID
+	 */
+	JobOperationResultJson resumeInstance(String theInstanceId) throws ResourceNotFoundException;
+
+	/**
 	 * Adds an attachment to a job currently in BUILDING status. This should not be called after the job has been queued for execution.
 	 *
 	 * @param theAttachmentDetails The attachment contents and metadata

@@ -50,6 +50,11 @@ public enum StatusEnum {
 	QUEUED(true, false, true),
 
 	/**
+	 * Task has been paused and will not be scheduled for execution until resumed.
+	 */
+	PAUSED(true, false, true),
+
+	/**
 	 * Task is current executing
 	 */
 	IN_PROGRESS(true, false, true),
@@ -198,11 +203,14 @@ public enum StatusEnum {
 		boolean canTransition;
 		switch (theOrigStatus) {
 			case BUILDING:
-				canTransition = theNewStatus == QUEUED || theNewStatus == CANCELLED || theNewStatus == BUILDING;
+				canTransition = theNewStatus == QUEUED || theNewStatus == PAUSED || theNewStatus == CANCELLED || theNewStatus == BUILDING;
 				break;
 			case QUEUED:
 				// initial state can transition to anything
 				canTransition = true;
+				break;
+			case PAUSED:
+				canTransition = theNewStatus == QUEUED || theNewStatus == PAUSED || theNewStatus == CANCELLED;
 				break;
 			case IN_PROGRESS:
 			case ERRORED:

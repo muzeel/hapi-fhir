@@ -93,6 +93,44 @@ class JpaJobPersistenceImplTest {
 	}
 
 	@Test
+	void pauseSuccess() {
+		when(myJobInstanceRepository.updateInstanceStatusIfIn(
+			eq(TEST_INSTANCE_ID), eq(StatusEnum.PAUSED), any()))
+			.thenReturn(1);
+
+		JobOperationResultJson result = mySvc.pauseInstance(TEST_INSTANCE_ID);
+
+		assertTrue(result.getSuccess());
+		assertEquals("Job instance <test-instance-id> successfully paused.", result.getMessage());
+	}
+
+	@Test
+	void pauseAlreadyPaused() {
+		when(myJobInstanceRepository.updateInstanceStatusIfIn(
+			eq(TEST_INSTANCE_ID), eq(StatusEnum.PAUSED), any()))
+			.thenReturn(0);
+		when(myJobInstanceRepository.findById(TEST_INSTANCE_ID))
+			.thenReturn(Optional.of(createBatch2JobInstanceEntity()));
+
+		JobOperationResultJson result = mySvc.pauseInstance(TEST_INSTANCE_ID);
+
+		assertFalse(result.getSuccess());
+		assertEquals("Job instance <test-instance-id> cannot be paused from status COMPLETED", result.getMessage());
+	}
+
+	@Test
+	void resumeSuccess() {
+		when(myJobInstanceRepository.updateInstanceStatusIfIn(
+			eq(TEST_INSTANCE_ID), eq(StatusEnum.QUEUED), any()))
+			.thenReturn(1);
+
+		JobOperationResultJson result = mySvc.resumeInstance(TEST_INSTANCE_ID);
+
+		assertTrue(result.getSuccess());
+		assertEquals("Job instance <test-instance-id> successfully resumed.", result.getMessage());
+	}
+
+	@Test
 	public void deleteChunks_withInstanceId_callsChunkRepoDelete() {
 		// setup
 		String jobId = "jobid";

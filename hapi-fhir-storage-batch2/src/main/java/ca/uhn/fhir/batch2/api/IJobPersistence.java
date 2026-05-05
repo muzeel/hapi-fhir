@@ -258,6 +258,22 @@ public interface IJobPersistence extends IWorkChunkPersistence {
 	// on implementations @Transactional(propagation = Propagation.REQUIRES_NEW)
 	JobOperationResultJson cancelInstance(String theInstanceId);
 
+	/**
+	 * Pauses a job instance so it will not be scheduled for further processing until resumed.
+	 *
+	 * @param theInstanceId The instance ID
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	JobOperationResultJson pauseInstance(String theInstanceId);
+
+	/**
+	 * Resumes a paused job instance by moving it back to QUEUED state.
+	 *
+	 * @param theInstanceId The instance ID
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	JobOperationResultJson resumeInstance(String theInstanceId);
+
 	@Transactional(propagation = Propagation.MANDATORY)
 	void updateInstanceUpdateTime(String theInstanceId);
 

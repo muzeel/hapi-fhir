@@ -748,6 +748,60 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		}
 	}
 
+	@Override
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public JobOperationResultJson pauseInstance(String theInstanceId) {
+		int recordsChanged = myJobInstanceRepository.updateInstanceStatusIfIn(
+				theInstanceId,
+				StatusEnum.PAUSED,
+				Set.of(StatusEnum.BUILDING, StatusEnum.QUEUED, StatusEnum.IN_PROGRESS, StatusEnum.FINALIZE, StatusEnum.ERRORED));
+		String operationString = "Pause job instance " + theInstanceId;
+		String messagePrefix = "Job instance <" + theInstanceId + ">";
+		if (recordsChanged > 0) {
+			return JobOperationResultJson.newSuccess(operationString, messagePrefix + " successfully paused.");
+		}
+
+		Optional<JobInstance> instance = fetchInstance(theInstanceId);
+		if (instance.isPresent()) {
+			if (instance.get().getStatus() == StatusEnum.PAUSED) {
+				return JobOperationResultJson.newFailure(
+					operationString, messagePrefix + " was already paused.  Nothing to do.");
+			}
+			return JobOperationResultJson.newFailure(
+					operationString,
+					messagePrefix + " cannot be paused from status " + instance.get().getStatus());
+		}
+
+		return JobOperationResultJson.newFailure(operationString, messagePrefix + " not found.");
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public JobOperationResultJson resumeInstance(String theInstanceId) {
+		int recordsChanged = myJobInstanceRepository.updateInstanceStatusIfIn(
+				theInstanceId,
+				StatusEnum.QUEUED,
+				Set.of(StatusEnum.PAUSED));
+		String operationString = "Resume job instance " + theInstanceId;
+		String messagePrefix = "Job instance <" + theInstanceId + ">";
+		if (recordsChanged > 0) {
+			return JobOperationResultJson.newSuccess(operationString, messagePrefix + " successfully resumed.");
+		}
+
+		Optional<JobInstance> instance = fetchInstance(theInstanceId);
+		if (instance.isPresent()) {
+			if (instance.get().getStatus() == StatusEnum.QUEUED) {
+				return JobOperationResultJson.newFailure(
+					operationString, messagePrefix + " is already queued.");
+			}
+			return JobOperationResultJson.newFailure(
+					operationString,
+					messagePrefix + " cannot be resumed from status " + instance.get().getStatus());
+		}
+
+		return JobOperationResultJson.newFailure(operationString, messagePrefix + " not found.");
+	}
+
 	private void invokePreStorageBatchHooks(RequestDetails theRequestDetails, JobInstance theJobInstance) {
 		if (myInterceptorBroadcaster.hasHooks(Pointcut.STORAGE_PRESTORAGE_BATCH_JOB_CREATE)) {
 			HookParams params = new HookParams()

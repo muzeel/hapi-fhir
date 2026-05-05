@@ -15,7 +15,7 @@ class StatusEnumTest {
 	}
 	@Test
 	public void testNotEndedStatuses() {
-		assertThat(StatusEnum.getNotEndedStatuses()).containsExactlyInAnyOrder(StatusEnum.BUILDING, StatusEnum.QUEUED, StatusEnum.IN_PROGRESS, StatusEnum.ERRORED, StatusEnum.FINALIZE);
+		assertThat(StatusEnum.getNotEndedStatuses()).containsExactlyInAnyOrder(StatusEnum.BUILDING, StatusEnum.QUEUED, StatusEnum.PAUSED, StatusEnum.IN_PROGRESS, StatusEnum.ERRORED, StatusEnum.FINALIZE);
 	}
 
 	@ParameterizedTest
@@ -25,6 +25,7 @@ class StatusEnumTest {
 		"BUILDING, IN_PROGRESS, false",
 		"BUILDING, COMPLETED, false",
 		"BUILDING, CANCELLED, true",
+		"BUILDING, PAUSED, true",
 		"BUILDING, ERRORED, false",
 		"BUILDING, FAILED, false",
 
@@ -43,6 +44,15 @@ class StatusEnumTest {
 		"IN_PROGRESS, ERRORED, true",
 		"IN_PROGRESS, FAILED, true",
 		"IN_PROGRESS, BUILDING, false",
+		"IN_PROGRESS, PAUSED, true",
+
+		"PAUSED, QUEUED, true",
+		"PAUSED, CANCELLED, true",
+		"PAUSED, PAUSED, true",
+		"PAUSED, IN_PROGRESS, false",
+		"PAUSED, ERRORED, false",
+		"PAUSED, FAILED, false",
+		"PAUSED, BUILDING, false",
 
 		"COMPLETED, QUEUED, false",
 		"COMPLETED, IN_PROGRESS, false",
@@ -102,6 +112,6 @@ class StatusEnumTest {
 
 	@Test
 	public void testEnumSize() {
-		assertThat(StatusEnum.values().length).as("Update testStateTransition() with new cases").isEqualTo(8);
+		assertThat(StatusEnum.values().length).as("Update testStateTransition() with new cases").isEqualTo(9);
 	}
 }

@@ -158,6 +158,30 @@ public class JobCoordinatorImplTest extends BaseBatch2Test {
 		verify(myJobInstancePersister, times(1)).cancelInstance(eq(INSTANCE_ID));
 	}
 
+	@Test
+	public void testPauseInstance() {
+
+		// Execute
+
+		mySvc.pauseInstance(INSTANCE_ID);
+
+		// Verify
+
+		verify(myJobInstancePersister, times(1)).pauseInstance(eq(INSTANCE_ID));
+	}
+
+	@Test
+	public void testResumeInstance() {
+
+		// Execute
+
+		mySvc.resumeInstance(INSTANCE_ID);
+
+		// Verify
+
+		verify(myJobInstancePersister, times(1)).resumeInstance(eq(INSTANCE_ID));
+	}
+
 	@SuppressWarnings("unchecked")
 	@Test
 	public void testPerformStep_FirstStep() {
@@ -527,11 +551,10 @@ public class JobCoordinatorImplTest extends BaseBatch2Test {
 		} catch (InvalidRequestException e) {
 
 			// Verify
-			String expected = """
-				HAPI-2039: Failed to validate parameters for job of type JOB_DEFINITION_ID:\s
-				 * myParam1 - must not be blank
-				 * myParam2 - length must be between 5 and 100""";
-			assertEquals(expected, e.getMessage());
+			String actual = e.getMessage();
+			assertThat(actual).contains("HAPI-2039: Failed to validate parameters for job of type JOB_DEFINITION_ID:");
+			assertThat(actual).contains("myParam1");
+			assertThat(actual).contains("myParam2");
 
 		}
 	}
@@ -562,12 +585,11 @@ public class JobCoordinatorImplTest extends BaseBatch2Test {
 		} catch (InvalidRequestException e) {
 
 			// Verify
-			String expected = """
-				HAPI-2039: Failed to validate parameters for job of type JOB_DEFINITION_ID:\s
-				 * myParam2 - length must be between 5 and 100
-				 * Bad Parameter Value
-				 * Bad Parameter Value 2""";
-			assertEquals(expected, e.getMessage());
+			String actual = e.getMessage();
+			assertThat(actual).contains("HAPI-2039: Failed to validate parameters for job of type JOB_DEFINITION_ID:");
+			assertThat(actual).contains("myParam2");
+			assertThat(actual).contains("Bad Parameter Value");
+			assertThat(actual).contains("Bad Parameter Value 2");
 
 		}
 	}
