@@ -176,4 +176,16 @@ public interface IBatch2WorkChunkRepository
 	@Query(
 			"SELECT new ca.uhn.fhir.batch2.model.BatchWorkChunkStatusDTO(e.myTargetStepId, e.myStatus, min(e.myStartTime), max(e.myEndTime), avg(cast((e.myEndTime - e.myStartTime) as long)), count(*)) FROM Batch2WorkChunkEntity e WHERE e.myInstanceId=:instanceId GROUP BY e.myTargetStepId, e.myStatus")
 	List<BatchWorkChunkStatusDTO> fetchWorkChunkStatusForInstance(@Param("instanceId") String theInstanceId);
+
+	/**
+	 * Batch update the status of multiple work chunks at once.
+	 * @return the number of chunks actually updated
+	 */
+	@Modifying
+	@Query(
+			"UPDATE Batch2WorkChunkEntity e SET e.myStatus = :newStatus WHERE e.myId IN (:ids) AND e.myStatus IN (:oldStatuses)")
+	int updateChunkStatusesInBatch(
+			@Param("ids") Set<String> theChunkIds,
+			@Param("oldStatuses") Set<WorkChunkStatusEnum> theOldStatuses,
+			@Param("newStatus") WorkChunkStatusEnum theNewStatus);
 }

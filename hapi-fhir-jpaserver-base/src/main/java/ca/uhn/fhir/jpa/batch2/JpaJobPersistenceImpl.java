@@ -756,12 +756,15 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		if (recordsChanged > 0) {
 			Optional<JobInstance> instance = fetchInstance(theInstanceId);
 			String definitionId = instance.map(JobInstance::getJobDefinitionId).orElse("unknown");
+			StatusEnum priorStatus = instance.map(JobInstance::getStatus).orElse(null);
 			myAuditSvc.recordOperation(
 					theInstanceId,
 					definitionId,
 					IBatch2JobAuditSvc.OP_CANCEL,
 					null,
 					"Job instance successfully cancelled");
+			fireStatusChangeEvent(
+					theInstanceId, definitionId, priorStatus, StatusEnum.CANCELLED, "Job instance cancelled");
 			return JobOperationResultJson.newSuccess(operationString, messagePrefix + " successfully cancelled.");
 		} else {
 			Optional<JobInstance> instance = fetchInstance(theInstanceId);
@@ -800,8 +803,10 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		if (recordsChanged > 0) {
 			Optional<JobInstance> instance = fetchInstance(theInstanceId);
 			String definitionId = instance.map(JobInstance::getJobDefinitionId).orElse("unknown");
+			StatusEnum priorStatus = instance.map(JobInstance::getStatus).orElse(null);
 			myAuditSvc.recordOperation(
 					theInstanceId, definitionId, IBatch2JobAuditSvc.OP_PAUSE, null, "Job instance successfully paused");
+			fireStatusChangeEvent(theInstanceId, definitionId, priorStatus, StatusEnum.PAUSED, "Job instance paused");
 			return JobOperationResultJson.newSuccess(operationString, messagePrefix + " successfully paused.");
 		}
 
@@ -846,12 +851,14 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		if (recordsChanged > 0) {
 			Optional<JobInstance> instance = fetchInstance(theInstanceId);
 			String definitionId = instance.map(JobInstance::getJobDefinitionId).orElse("unknown");
+			StatusEnum priorStatus = instance.map(JobInstance::getStatus).orElse(null);
 			myAuditSvc.recordOperation(
 					theInstanceId,
 					definitionId,
 					IBatch2JobAuditSvc.OP_RESUME,
 					null,
 					"Job instance successfully resumed");
+			fireStatusChangeEvent(theInstanceId, definitionId, priorStatus, StatusEnum.QUEUED, "Job instance resumed");
 			return JobOperationResultJson.newSuccess(operationString, messagePrefix + " successfully resumed.");
 		}
 
@@ -958,6 +965,23 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		}
 	}
 
+	private void fireStatusChangeEvent(
+			String theInstanceId,
+			String theDefinitionId,
+			StatusEnum thePriorStatus,
+			StatusEnum theNewStatus,
+			String theMessage) {
+		if (myInterceptorBroadcaster.hasHooks(Pointcut.BATCH2_JOB_STATUS_CHANGE)) {
+			HookParams params = new HookParams()
+					.add(String.class, theInstanceId)
+					.add(String.class, theDefinitionId)
+					.add(StatusEnum.class, thePriorStatus)
+					.add(StatusEnum.class, theNewStatus)
+					.add(String.class, theMessage);
+			myInterceptorBroadcaster.callHooks(Pointcut.BATCH2_JOB_STATUS_CHANGE, params);
+		}
+	}
+
 	@Nullable
 	private static String truncateErrorMessage(String theErrorMessage) {
 		String errorMessage;
@@ -968,5 +992,15 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 			errorMessage = theErrorMessage;
 		}
 		return errorMessage;
+	}
+
+	@Override
+	public int updateChunkStatusesInBatch(
+			Set<String> theChunkIds, Set<WorkChunkStatusEnum> theOldStatuses, WorkChunkStatusEnum theNewStatus) {
+		if (theChunkIds.isEmpty()) {
+			return 0;
+		}
+		ourLog.debug("Batch updating {} chunks from {} to {}", theChunkIds.size(), theOldStatuses, theNewStatus);
+		return myWorkChunkRepository.updateChunkStatusesInBatch(theChunkIds, theOldStatuses, theNewStatus);
 	}
 }

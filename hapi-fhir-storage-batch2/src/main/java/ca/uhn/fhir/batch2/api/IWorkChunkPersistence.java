@@ -150,4 +150,19 @@ public interface IWorkChunkPersistence {
 	 */
 	@Transactional(propagation = Propagation.MANDATORY, readOnly = true)
 	Stream<WorkChunk> fetchAllWorkChunksForStepStream(String theInstanceId, String theStepId);
+
+	/**
+	 * Batch update the status of multiple work chunks at once.
+	 * This is more efficient than updating chunks individually.
+	 *
+	 * @param theChunkIds the IDs of chunks to update
+	 * @param theOldStatuses only update chunks that are currently in one of these statuses
+	 * @param theNewStatus the new status to set
+	 * @return the number of chunks actually updated
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	int updateChunkStatusesInBatch(
+			java.util.Set<String> theChunkIds,
+			java.util.Set<WorkChunkStatusEnum> theOldStatuses,
+			WorkChunkStatusEnum theNewStatus);
 }

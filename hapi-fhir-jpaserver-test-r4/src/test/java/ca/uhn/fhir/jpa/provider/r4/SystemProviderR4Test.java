@@ -25,6 +25,14 @@ import ca.uhn.fhir.jpa.rp.r4.PractitionerResourceProvider;
 import ca.uhn.fhir.jpa.rp.r4.PractitionerRoleResourceProvider;
 import ca.uhn.fhir.jpa.rp.r4.ServiceRequestResourceProvider;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
+import ca.uhn.fhir.jpa.batch2.cache.ActiveJobStatusCacheSvcImpl;
+import ca.uhn.fhir.jpa.batch2.cache.IActiveJobStatusCacheSvc;
+import ca.uhn.fhir.jpa.dao.data.IBatch2AttachmentRepository;
+import ca.uhn.fhir.jpa.dao.data.IBatch2JobAuditRepository;
+import ca.uhn.fhir.jpa.dao.data.IBatch2JobInstanceRepository;
+import ca.uhn.fhir.jpa.dao.data.IBatch2WorkChunkMetadataViewRepository;
+import ca.uhn.fhir.jpa.dao.data.IBatch2WorkChunkRepository;
+import ca.uhn.fhir.jpa.entity.Batch2JobAuditEntity;
 import ca.uhn.fhir.jpa.entity.Batch2JobInstanceEntity;
 import ca.uhn.fhir.jpa.entity.Batch2WorkChunkEntity;
 import ca.uhn.fhir.jpa.test.BaseJpaR4Test;
@@ -104,10 +112,14 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Date;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -132,6 +144,18 @@ public class SystemProviderR4Test extends BaseJpaR4Test {
 
 	@Autowired
 	private JobDefinitionRegistry myJobDefinitionRegistry;
+
+	@Autowired
+	private IBatch2JobInstanceRepository myJobInstanceRepository;
+
+	@Autowired
+	private IBatch2WorkChunkRepository myWorkChunkRepository;
+
+	@Autowired
+	private IBatch2JobAuditRepository myJobAuditRepository;
+
+	@Autowired(required = false)
+	private IActiveJobStatusCacheSvc myActiveJobStatusCacheSvc;
 
 	@SuppressWarnings("deprecation")
 	@AfterEach
@@ -1130,6 +1154,254 @@ public class SystemProviderR4Test extends BaseJpaR4Test {
 		assertThat(myFhirContext.newJsonParser().encodeResourceToString(cancelResult)).contains("\"valueBoolean\":true");
 
 		runInTransaction(() -> assertTrue(myJobInstanceRepository.findById(instanceId).orElseThrow().isCancelled()));
+	}
+
+	@Test
+	public void testBatch2JobHistoryEndpoint() {
+		String instanceId = runInTransaction(() -> {
+			Batch2JobInstanceEntity instance = new Batch2JobInstanceEntity();
+			instance.setId(UUID.randomUUID().toString());
+			instance.setDefinitionId("history-job-def");
+			instance.setDefinitionVersion(1);
+			instance.setStatus(ca.uhn.fhir.batch2.model.StatusEnum.COMPLETED);
+			instance.setCreateTime(new Date());
+			instance.setStartTime(new Date());
+			instance.setEndTime(new Date());
+			instance.setProgress(1.0);
+			instance.setParams("{\"history\":true}");
+			myJobInstanceRepository.save(instance);
+			return instance.getId();
+		});
+
+		Parameters historyInput = new Parameters();
+		historyInput.addParameter(ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, instanceId);
+		Parameters historyResult = myClient
+				.operation()
+				.onServer()
+				.named("$hapi.fhir.batch2-job-history")
+				.withParameters(historyInput)
+				.execute();
+		String historyJson = myFhirContext.newJsonParser().encodeResourceToString(historyResult);
+		assertThat(historyJson).contains("total");
+	}
+
+	@Test
+	public void testBatch2AuditRecordsCreatedOnOperations() {
+		String instanceId = runInTransaction(() -> {
+			Batch2JobInstanceEntity instance = new Batch2JobInstanceEntity();
+			instance.setId(UUID.randomUUID().toString());
+			instance.setDefinitionId("audit-job-def");
+			instance.setDefinitionVersion(1);
+			instance.setStatus(ca.uhn.fhir.batch2.model.StatusEnum.QUEUED);
+			instance.setCreateTime(new Date());
+			instance.setStartTime(new Date());
+			instance.setParams("{\"audit\":true}");
+			myJobInstanceRepository.save(instance);
+			return instance.getId();
+		});
+
+		Parameters input = new Parameters();
+		input.addParameter(ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, instanceId);
+
+		myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_PAUSE)
+				.withParameters(input)
+				.execute();
+
+		runInTransaction(() -> {
+			List<Batch2JobAuditEntity> auditRecords = myJobAuditRepository
+					.findByInstanceId(instanceId, org.springframework.data.domain.PageRequest.of(0, 10))
+					.getContent();
+			assertThat(auditRecords).isNotEmpty();
+			assertThat(auditRecords).anySatisfy(a -> assertThat(a.getOperation()).isEqualToIgnoringCase("pause"));
+		});
+
+		myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_CANCEL)
+				.withParameters(input)
+				.execute();
+
+		runInTransaction(() -> {
+			List<Batch2JobAuditEntity> auditRecords = myJobAuditRepository
+					.findByInstanceId(instanceId, org.springframework.data.domain.PageRequest.of(0, 10))
+					.getContent();
+			assertThat(auditRecords).anySatisfy(a -> assertThat(a.getOperation()).isEqualToIgnoringCase("cancel"));
+		});
+	}
+
+	@Test
+	public void testBatch2StatusChangeNotificationFired() {
+		AtomicBoolean notificationFired = new AtomicBoolean(false);
+		AtomicReference<String> capturedInstanceId = new AtomicReference<>();
+
+		Object notificationInterceptor = new Object() {
+			@Hook(Pointcut.BATCH2_JOB_STATUS_CHANGE)
+			public void onStatusChange(String theInstanceId, String theDefId, ca.uhn.fhir.batch2.model.StatusEnum thePrior,
+					ca.uhn.fhir.batch2.model.StatusEnum theNew, String theMessage) {
+				notificationFired.set(true);
+				capturedInstanceId.set(theInstanceId);
+			}
+		};
+
+		myInterceptorRegistry.registerInterceptor(notificationInterceptor);
+
+		try {
+			String instanceId = runInTransaction(() -> {
+				Batch2JobInstanceEntity instance = new Batch2JobInstanceEntity();
+				instance.setId(UUID.randomUUID().toString());
+				instance.setDefinitionId("notify-job-def");
+				instance.setDefinitionVersion(1);
+				instance.setStatus(ca.uhn.fhir.batch2.model.StatusEnum.QUEUED);
+				instance.setCreateTime(new Date());
+				instance.setStartTime(new Date());
+				instance.setParams("{\"notify\":true}");
+				myJobInstanceRepository.save(instance);
+				return instance.getId();
+			});
+
+			Parameters input = new Parameters();
+			input.addParameter(ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, instanceId);
+
+		myClient
+				.operation()
+				.onServer()
+				.named(ProviderConstants.OPERATION_BATCH2_JOB_PAUSE)
+				.withParameters(input)
+				.execute();
+
+			assertTrue(notificationFired.get(), "BATCH2_JOB_STATUS_CHANGE notification should have been fired");
+			assertThat(capturedInstanceId.get()).isEqualTo(instanceId);
+		} finally {
+			myInterceptorRegistry.unregisterInterceptor(notificationInterceptor);
+		}
+	}
+
+	@Test
+	public void testBatchChunkStatusesUpdatedInBatch() {
+		String instanceId = runInTransaction(() -> {
+			Batch2JobInstanceEntity instance = new Batch2JobInstanceEntity();
+			instance.setId(UUID.randomUUID().toString());
+			instance.setDefinitionId("batch-chunk-job-def");
+			instance.setDefinitionVersion(1);
+			instance.setStatus(ca.uhn.fhir.batch2.model.StatusEnum.IN_PROGRESS);
+			instance.setCreateTime(new Date());
+			instance.setStartTime(new Date());
+			instance.setParams("{\"batch\":true}");
+			myJobInstanceRepository.saveAndFlush(instance);
+			return instance.getId();
+		});
+
+		Set<String> chunkIds = new java.util.HashSet<>();
+		runInTransaction(() -> {
+			for (int i = 0; i < 5; i++) {
+				Batch2WorkChunkEntity chunk = new Batch2WorkChunkEntity();
+				chunk.setId(UUID.randomUUID().toString());
+				chunk.setInstanceId(instanceId);
+				chunk.setJobDefinitionId("batch-chunk-job-def");
+				chunk.setJobDefinitionVersion(1);
+				chunk.setTargetStepId("step-1");
+				chunk.setSequence(i);
+				chunk.setCreateTime(new Date());
+				chunk.setStatus(ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.READY);
+				myWorkChunkRepository.saveAndFlush(chunk);
+				chunkIds.add(chunk.getId());
+			}
+		});
+
+		int[] updated = new int[1];
+		runInTransaction(() -> {
+			updated[0] = myWorkChunkRepository.updateChunkStatusesInBatch(
+					chunkIds, Set.of(ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.READY), ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.COMPLETED);
+		});
+		assertEquals(5, updated[0], "All 5 chunks should have been updated");
+	}
+
+	@Test
+	public void testBatchChunkStatusesUpdatedInBatchV2() {
+		String instanceId = runInTransaction(() -> {
+			Batch2JobInstanceEntity instance = new Batch2JobInstanceEntity();
+			instance.setId(UUID.randomUUID().toString());
+			instance.setDefinitionId("batch-chunk-job-def-v2");
+			instance.setDefinitionVersion(1);
+			instance.setStatus(ca.uhn.fhir.batch2.model.StatusEnum.IN_PROGRESS);
+			instance.setCreateTime(new Date());
+			instance.setStartTime(new Date());
+			instance.setParams("{\"batch\":true}");
+			myJobInstanceRepository.saveAndFlush(instance);
+			return instance.getId();
+		});
+
+		Set<String> chunkIds = new java.util.HashSet<>();
+		runInTransaction(() -> {
+			for (int i = 0; i < 5; i++) {
+				Batch2WorkChunkEntity chunk = new Batch2WorkChunkEntity();
+				chunk.setId(UUID.randomUUID().toString());
+				chunk.setInstanceId(instanceId);
+				chunk.setJobDefinitionId("batch-chunk-job-def-v2");
+				chunk.setJobDefinitionVersion(1);
+				chunk.setTargetStepId("step-1");
+				chunk.setSequence(i);
+				chunk.setCreateTime(new Date());
+				chunk.setStatus(ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.READY);
+				myWorkChunkRepository.saveAndFlush(chunk);
+				chunkIds.add(chunk.getId());
+			}
+		});
+
+		int[] updated = new int[1];
+		runInTransaction(() -> {
+			updated[0] = myWorkChunkRepository.updateChunkStatusesInBatch(
+					chunkIds, Set.of(ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.READY), ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.COMPLETED);
+		});
+		assertEquals(5, updated[0], "All 5 chunks should have been updated");
+
+		long[] completedCount = new long[1];
+		runInTransaction(() -> {
+			completedCount[0] = myWorkChunkRepository.fetchChunks(
+					org.springframework.data.domain.PageRequest.of(0, 10), instanceId).stream()
+					.filter(c -> c.getStatus() == ca.uhn.fhir.batch2.model.WorkChunkStatusEnum.COMPLETED)
+					.count();
+		});
+		assertEquals(5, completedCount[0], "All chunks should now be COMPLETED");
+	}
+
+	@Test
+	public void testActiveJobStatusCache() {
+		if (myActiveJobStatusCacheSvc == null) {
+			ourLog.info("Skipping testActiveJobStatusCache - cache service not available in test context");
+			return;
+		}
+
+		String instanceId = runInTransaction(() -> {
+			Batch2JobInstanceEntity instance = new Batch2JobInstanceEntity();
+			instance.setId(UUID.randomUUID().toString());
+			instance.setDefinitionId("cache-job-def");
+			instance.setDefinitionVersion(1);
+			instance.setStatus(ca.uhn.fhir.batch2.model.StatusEnum.IN_PROGRESS);
+			instance.setCreateTime(new Date());
+			instance.setStartTime(new Date());
+			instance.setParams("{\"cache\":true}");
+			myJobInstanceRepository.save(instance);
+			return instance.getId();
+		});
+
+		myActiveJobStatusCacheSvc.updateCachedStatus(instanceId, ca.uhn.fhir.batch2.model.StatusEnum.IN_PROGRESS);
+
+		ca.uhn.fhir.batch2.model.StatusEnum cachedStatus = myActiveJobStatusCacheSvc.getCachedStatus(instanceId);
+		assertEquals(ca.uhn.fhir.batch2.model.StatusEnum.IN_PROGRESS, cachedStatus);
+
+		Map<String, ca.uhn.fhir.batch2.model.StatusEnum> allStatuses = myActiveJobStatusCacheSvc.getAllActiveStatuses();
+		assertThat(allStatuses).containsKey(instanceId);
+
+		myActiveJobStatusCacheSvc.invalidateStatus(instanceId);
+		assertNull(myActiveJobStatusCacheSvc.getCachedStatus(instanceId));
+
+		myActiveJobStatusCacheSvc.clear();
+		assertThat(myActiveJobStatusCacheSvc.getAllActiveStatuses()).isEmpty();
 	}
 
 	private void registerTestJobDefinitions() {
