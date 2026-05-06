@@ -20,6 +20,7 @@
 package ca.uhn.fhir.jpa.batch2;
 
 import ca.uhn.fhir.batch2.api.AttachmentDetails;
+import ca.uhn.fhir.batch2.api.IBatch2JobAuditSvc;
 import ca.uhn.fhir.batch2.api.IJobPersistence;
 import ca.uhn.fhir.batch2.api.JobOperationResultJson;
 import ca.uhn.fhir.batch2.model.BatchInstanceStatusDTO;
@@ -39,6 +40,7 @@ import ca.uhn.fhir.interceptor.api.HookParams;
 import ca.uhn.fhir.interceptor.api.IInterceptorBroadcaster;
 import ca.uhn.fhir.interceptor.api.Pointcut;
 import ca.uhn.fhir.jpa.dao.data.IBatch2AttachmentRepository;
+import ca.uhn.fhir.jpa.dao.data.IBatch2JobAuditRepository;
 import ca.uhn.fhir.jpa.dao.data.IBatch2JobInstanceRepository;
 import ca.uhn.fhir.jpa.dao.data.IBatch2WorkChunkMetadataViewRepository;
 import ca.uhn.fhir.jpa.dao.data.IBatch2WorkChunkRepository;
@@ -81,6 +83,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Date;
@@ -109,9 +112,11 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 	private final IBatch2JobInstanceRepository myJobInstanceRepository;
 	private final IBatch2WorkChunkRepository myWorkChunkRepository;
 	private final IBatch2WorkChunkMetadataViewRepository myWorkChunkMetadataViewRepo;
+	private final IBatch2JobAuditRepository myAuditRepository;
 	private final EntityManager myEntityManager;
 	private final IHapiTransactionService myTransactionService;
 	private final IInterceptorBroadcaster myInterceptorBroadcaster;
+	private final IBatch2JobAuditSvc myAuditSvc;
 
 	/**
 	 * Constructor
@@ -121,9 +126,11 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 			IBatch2JobInstanceRepository theJobInstanceRepository,
 			IBatch2WorkChunkRepository theWorkChunkRepository,
 			IBatch2WorkChunkMetadataViewRepository theWorkChunkMetadataViewRepo,
+			IBatch2JobAuditRepository theAuditRepository,
 			IHapiTransactionService theTransactionService,
 			EntityManager theEntityManager,
-			IInterceptorBroadcaster theInterceptorBroadcaster) {
+			IInterceptorBroadcaster theInterceptorBroadcaster,
+			IBatch2JobAuditSvc theAuditSvc) {
 		Validate.notNull(theAttachmentRepository, "theAttachmentRepository");
 		Validate.notNull(theJobInstanceRepository, "theJobInstanceRepository");
 		Validate.notNull(theWorkChunkRepository, "theWorkChunkRepository");
@@ -131,9 +138,11 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		myJobInstanceRepository = theJobInstanceRepository;
 		myWorkChunkRepository = theWorkChunkRepository;
 		myWorkChunkMetadataViewRepo = theWorkChunkMetadataViewRepo;
+		myAuditRepository = theAuditRepository;
 		myTransactionService = theTransactionService;
 		myEntityManager = theEntityManager;
 		myInterceptorBroadcaster = theInterceptorBroadcaster;
+		myAuditSvc = theAuditSvc;
 	}
 
 	@Override
@@ -401,6 +410,7 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 	public WorkChunkStatusEnum onWorkChunkError(WorkChunkErrorEvent theParameters) {
 		String chunkId = theParameters.getChunkId();
 		String errorMessage = truncateErrorMessage(theParameters.getErrorMsg());
+		int errorCount = theParameters.getErrorCount() + 1;
 
 		return myTransactionService.withSystemRequestOnDefaultPartition().execute(() -> {
 			int changeCount = myWorkChunkRepository.updateChunkStatusAndIncrementErrorCountForEndError(
@@ -413,6 +423,16 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 			if (failChangeCount > 0) {
 				return WorkChunkStatusEnum.FAILED;
 			} else {
+				Duration backoffDelay = ca.uhn.fhir.batch2.api.RetryChunkLaterException.calculateExponentialBackoff(
+						errorCount, Duration.ofSeconds(1), Duration.ofMinutes(5));
+				Date nextRetryTime = Date.from(Instant.now().plus(backoffDelay));
+				myWorkChunkRepository.updateWorkChunkNextPollTime(
+						chunkId, WorkChunkStatusEnum.POLL_WAITING, Set.of(WorkChunkStatusEnum.ERRORED), nextRetryTime);
+				ourLog.debug(
+						"Applied exponential backoff for chunk {}: retry #{} after {}s",
+						chunkId,
+						errorCount,
+						backoffDelay.getSeconds());
 				return WorkChunkStatusEnum.ERRORED;
 			}
 		});
@@ -732,17 +752,32 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		int recordsChanged = myJobInstanceRepository.updateInstanceCancelled(theInstanceId, true);
 		String operationString = "Cancel job instance " + theInstanceId;
 
-		// wipmb For 6.8 - This is too detailed to be down here - this should be up at the api layer.
-		// Replace with boolean result or ResourceNotFound exception.  Build the message up at the ui.
 		String messagePrefix = "Job instance <" + theInstanceId + ">";
 		if (recordsChanged > 0) {
+			Optional<JobInstance> instance = fetchInstance(theInstanceId);
+			String definitionId = instance.map(JobInstance::getJobDefinitionId).orElse("unknown");
+			myAuditSvc.recordOperation(
+					theInstanceId,
+					definitionId,
+					IBatch2JobAuditSvc.OP_CANCEL,
+					null,
+					"Job instance successfully cancelled");
 			return JobOperationResultJson.newSuccess(operationString, messagePrefix + " successfully cancelled.");
 		} else {
 			Optional<JobInstance> instance = fetchInstance(theInstanceId);
 			if (instance.isPresent()) {
+				String definitionId = instance.get().getJobDefinitionId();
+				myAuditSvc.recordOperation(
+						theInstanceId,
+						definitionId,
+						IBatch2JobAuditSvc.OP_CANCEL,
+						null,
+						"Job instance was already cancelled");
 				return JobOperationResultJson.newFailure(
 						operationString, messagePrefix + " was already cancelled.  Nothing to do.");
 			} else {
+				myAuditSvc.recordOperation(
+						theInstanceId, "unknown", IBatch2JobAuditSvc.OP_CANCEL, null, "Job instance not found");
 				return JobOperationResultJson.newFailure(operationString, messagePrefix + " not found.");
 			}
 		}
@@ -763,21 +798,41 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		String operationString = "Pause job instance " + theInstanceId;
 		String messagePrefix = "Job instance <" + theInstanceId + ">";
 		if (recordsChanged > 0) {
+			Optional<JobInstance> instance = fetchInstance(theInstanceId);
+			String definitionId = instance.map(JobInstance::getJobDefinitionId).orElse("unknown");
+			myAuditSvc.recordOperation(
+					theInstanceId, definitionId, IBatch2JobAuditSvc.OP_PAUSE, null, "Job instance successfully paused");
 			return JobOperationResultJson.newSuccess(operationString, messagePrefix + " successfully paused.");
 		}
 
 		Optional<JobInstance> instance = fetchInstance(theInstanceId);
 		if (instance.isPresent()) {
+			String definitionId = instance.get().getJobDefinitionId();
 			if (instance.get().getStatus() == StatusEnum.PAUSED) {
+				myAuditSvc.recordOperation(
+						theInstanceId,
+						definitionId,
+						IBatch2JobAuditSvc.OP_PAUSE,
+						null,
+						"Job instance was already paused");
 				return JobOperationResultJson.newFailure(
 						operationString, messagePrefix + " was already paused.  Nothing to do.");
 			}
+			myAuditSvc.recordOperation(
+					theInstanceId,
+					definitionId,
+					IBatch2JobAuditSvc.OP_PAUSE,
+					null,
+					"Job instance cannot be paused from status "
+							+ instance.get().getStatus());
 			return JobOperationResultJson.newFailure(
 					operationString,
 					messagePrefix + " cannot be paused from status "
 							+ instance.get().getStatus());
 		}
 
+		myAuditSvc.recordOperation(
+				theInstanceId, "unknown", IBatch2JobAuditSvc.OP_PAUSE, null, "Job instance not found");
 		return JobOperationResultJson.newFailure(operationString, messagePrefix + " not found.");
 	}
 
@@ -789,20 +844,44 @@ public class JpaJobPersistenceImpl implements IJobPersistence {
 		String operationString = "Resume job instance " + theInstanceId;
 		String messagePrefix = "Job instance <" + theInstanceId + ">";
 		if (recordsChanged > 0) {
+			Optional<JobInstance> instance = fetchInstance(theInstanceId);
+			String definitionId = instance.map(JobInstance::getJobDefinitionId).orElse("unknown");
+			myAuditSvc.recordOperation(
+					theInstanceId,
+					definitionId,
+					IBatch2JobAuditSvc.OP_RESUME,
+					null,
+					"Job instance successfully resumed");
 			return JobOperationResultJson.newSuccess(operationString, messagePrefix + " successfully resumed.");
 		}
 
 		Optional<JobInstance> instance = fetchInstance(theInstanceId);
 		if (instance.isPresent()) {
+			String definitionId = instance.get().getJobDefinitionId();
 			if (instance.get().getStatus() == StatusEnum.QUEUED) {
+				myAuditSvc.recordOperation(
+						theInstanceId,
+						definitionId,
+						IBatch2JobAuditSvc.OP_RESUME,
+						null,
+						"Job instance is already queued");
 				return JobOperationResultJson.newFailure(operationString, messagePrefix + " is already queued.");
 			}
+			myAuditSvc.recordOperation(
+					theInstanceId,
+					definitionId,
+					IBatch2JobAuditSvc.OP_RESUME,
+					null,
+					"Job instance cannot be resumed from status "
+							+ instance.get().getStatus());
 			return JobOperationResultJson.newFailure(
 					operationString,
 					messagePrefix + " cannot be resumed from status "
 							+ instance.get().getStatus());
 		}
 
+		myAuditSvc.recordOperation(
+				theInstanceId, "unknown", IBatch2JobAuditSvc.OP_RESUME, null, "Job instance not found");
 		return JobOperationResultJson.newFailure(operationString, messagePrefix + " not found.");
 	}
 

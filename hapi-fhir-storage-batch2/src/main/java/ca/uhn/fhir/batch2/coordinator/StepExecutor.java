@@ -88,7 +88,8 @@ public class StepExecutor {
 						jobDefinitionId,
 						targetStepId,
 						chunkId);
-				WorkChunkErrorEvent parameters = new WorkChunkErrorEvent(chunkId, e.getMessage());
+				WorkChunkErrorEvent parameters =
+						new WorkChunkErrorEvent(chunkId, e.getMessage(), theStepExecutionDetails.getChunkErrorCount());
 				WorkChunkStatusEnum newStatus = myJobPersistence.onWorkChunkError(parameters);
 				if (newStatus == WorkChunkStatusEnum.FAILED) {
 					ourLog.error(

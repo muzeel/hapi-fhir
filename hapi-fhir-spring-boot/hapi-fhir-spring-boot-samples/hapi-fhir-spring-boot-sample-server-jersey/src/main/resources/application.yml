@@ -1,21 +1,52 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:fhirdb;DB_CLOSE_DELAY=-1;MODE=REGULAR;NON_KEYWORDS=VALUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+        hbm2ddl:
+          auto: update
+    show-sql: false
+
 hapi:
   fhir:
-    version: dstu3
+    version: r4
     server:
       path: /fhir/*
     rest:
-      server-name: hapi-fhir-spring-boot-sample-server-jersey
+      server-name: hapi-fhir-spring-boot-batch2-demo
       server-version: 1.0.0
-      implementation-description: Spring Boot Jersey Server Sample
+      implementation-description: Spring Boot Batch2 Demo Server
       default-response-encoding: json
       e-tag-support: enabled
       default-pretty-print: true
     validation:
       enabled: true
       request-only: true
+
 management:
-  security:
-    enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
 logging:
   level:
-    ca.uhn.fhir.jaxrs: debug
+    ca.uhn.fhir: debug
+    org.hibernate.SQL: INFO
+    org.hibernate.type: TRACE

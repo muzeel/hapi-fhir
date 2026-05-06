@@ -19,11 +19,13 @@
  */
 package ca.uhn.fhir.jpa.batch2;
 
+import ca.uhn.fhir.batch2.api.IBatch2JobAuditSvc;
 import ca.uhn.fhir.batch2.api.IJobPersistence;
 import ca.uhn.fhir.batch2.config.BaseBatch2Config;
 import ca.uhn.fhir.interceptor.api.IInterceptorBroadcaster;
 import ca.uhn.fhir.jpa.bulk.export.job.BulkExportJobConfig;
 import ca.uhn.fhir.jpa.dao.data.IBatch2AttachmentRepository;
+import ca.uhn.fhir.jpa.dao.data.IBatch2JobAuditRepository;
 import ca.uhn.fhir.jpa.dao.data.IBatch2JobInstanceRepository;
 import ca.uhn.fhir.jpa.dao.data.IBatch2WorkChunkMetadataViewRepository;
 import ca.uhn.fhir.jpa.dao.data.IBatch2WorkChunkRepository;
@@ -43,16 +45,25 @@ public class JpaBatch2Config extends BaseBatch2Config {
 			IBatch2JobInstanceRepository theJobInstanceRepository,
 			IBatch2WorkChunkRepository theWorkChunkRepository,
 			IBatch2WorkChunkMetadataViewRepository theWorkChunkMetadataViewRepo,
+			IBatch2JobAuditRepository theAuditRepository,
 			IHapiTransactionService theTransactionService,
 			EntityManager theEntityManager,
-			IInterceptorBroadcaster theInterceptorBroadcaster) {
+			IInterceptorBroadcaster theInterceptorBroadcaster,
+			IBatch2JobAuditSvc theAuditSvc) {
 		return new JpaJobPersistenceImpl(
 				theAttachmentRepository,
 				theJobInstanceRepository,
 				theWorkChunkRepository,
 				theWorkChunkMetadataViewRepo,
+				theAuditRepository,
 				theTransactionService,
 				theEntityManager,
-				theInterceptorBroadcaster);
+				theInterceptorBroadcaster,
+				theAuditSvc);
+	}
+
+	@Bean
+	public IBatch2JobAuditSvc batch2JobAuditSvc(IBatch2JobAuditRepository theAuditRepository) {
+		return new Batch2JobAuditSvcImpl(theAuditRepository);
 	}
 }

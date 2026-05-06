@@ -19,6 +19,7 @@
  */
 package ca.uhn.fhir.jpa.provider;
 
+import ca.uhn.fhir.batch2.api.IBatch2JobAuditSvc;
 import ca.uhn.fhir.batch2.api.IJobCoordinator;
 import ca.uhn.fhir.batch2.api.JobOperationResultJson;
 import ca.uhn.fhir.batch2.model.BatchInstanceStatusDTO;
@@ -54,6 +55,7 @@ import org.hl7.fhir.instance.model.api.IBaseParameters;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IPrimitiveType;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 
 import java.util.Collections;
@@ -79,6 +81,9 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 
 	@Autowired
 	private IJobCoordinator myJobCoordinator;
+
+	@Autowired
+	private IBatch2JobAuditSvc myBatch2JobAuditSvc;
 
 	@Description(
 			"Marks all currently existing resources of a given type, or all resources of all types, for reindexing.")
@@ -361,6 +366,69 @@ public final class JpaSystemProvider<T, MT> extends BaseJpaSystemProvider<T, MT>
 					IPrimitiveType<String> theJobId) {
 		return toOperationResult(myJobCoordinator.resumeInstance(
 				requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID)));
+	}
+
+	@Operation(name = ProviderConstants.OPERATION_BATCH2_JOB_HISTORY, idempotent = true)
+	@Description(shortDefinition = "Returns audit history for a Batch2 job")
+	public IBaseParameters batch2JobHistory(
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID, min = 1, typeName = "string")
+					IPrimitiveType<String> theJobId,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_OPERATION, typeName = "string")
+					IPrimitiveType<String> theOperation,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_FROM, typeName = "instant")
+					IPrimitiveType<Date> theFrom,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_TO, typeName = "instant")
+					IPrimitiveType<Date> theTo,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_PAGE_START, typeName = "integer")
+					IPrimitiveType<Integer> thePageStart,
+			@OperationParam(name = ProviderConstants.OPERATION_BATCH2_PARAM_BATCH_SIZE, typeName = "integer")
+					IPrimitiveType<Integer> theBatchSize) {
+		String jobId = requireParam(theJobId, ProviderConstants.OPERATION_BATCH2_PARAM_JOB_ID);
+
+		Page<IBatch2JobAuditSvc.Batch2JobAuditEntry> page = myBatch2JobAuditSvc.getAuditHistoryWithFilters(
+				jobId,
+				getOptionalPrimitiveValue(theOperation),
+				getOptionalPrimitiveValue(theFrom),
+				getOptionalPrimitiveValue(theTo),
+				org.springframework.data.domain.PageRequest.of(
+						defaultIfNull(getOptionalPrimitiveValue(thePageStart), 0),
+						defaultIfNull(getOptionalPrimitiveValue(theBatchSize), 20),
+						Sort.by(Sort.Direction.DESC, "myCreateTime")));
+
+		IBaseParameters retVal = ParametersUtil.newInstance(getContext());
+		ParametersUtil.addParameterToParametersInteger(getContext(), retVal, "total", (int) page.getTotalElements());
+		for (IBatch2JobAuditSvc.Batch2JobAuditEntry entry : page.getContent()) {
+			IBaseParameters entryParam = ParametersUtil.newInstance(getContext());
+			ParametersUtil.addParameterToParametersString(
+					getContext(), entryParam, "instanceId", entry.getInstanceId());
+			ParametersUtil.addParameterToParametersString(
+					getContext(), entryParam, "definitionId", entry.getDefinitionId());
+			ParametersUtil.addParameterToParametersString(getContext(), entryParam, "operation", entry.getOperation());
+			if (entry.getPriorStatus() != null) {
+				ParametersUtil.addParameterToParametersString(
+						getContext(), entryParam, "priorStatus", entry.getPriorStatus());
+			}
+			if (entry.getNewStatus() != null) {
+				ParametersUtil.addParameterToParametersString(
+						getContext(), entryParam, "newStatus", entry.getNewStatus());
+			}
+			if (entry.getUsername() != null) {
+				ParametersUtil.addParameterToParametersString(
+						getContext(), entryParam, "username", entry.getUsername());
+			}
+			if (entry.getMessage() != null) {
+				ParametersUtil.addParameterToParametersString(getContext(), entryParam, "message", entry.getMessage());
+			}
+			if (entry.getCreateTime() != null) {
+				ParametersUtil.addParameterToParameters(
+						getContext(),
+						entryParam,
+						"timestamp",
+						ParametersUtil.createInstant(getContext(), entry.getCreateTime()));
+			}
+			ParametersUtil.addParameterToParameters(getContext(), retVal, "auditEntry", entryParam);
+		}
+		return retVal;
 	}
 
 	private IBaseParameters toOperationResult(JobOperationResultJson theResult) {

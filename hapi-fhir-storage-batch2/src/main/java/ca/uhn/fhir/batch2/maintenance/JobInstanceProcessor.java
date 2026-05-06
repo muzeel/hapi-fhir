@@ -38,6 +38,7 @@ import ca.uhn.fhir.model.api.PagingIterator;
 import ca.uhn.fhir.util.Logs;
 import ca.uhn.fhir.util.StopWatch;
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import org.apache.commons.lang3.time.DateUtils;
 import org.slf4j.Logger;
 import org.springframework.data.domain.Page;
@@ -64,6 +65,17 @@ public class JobInstanceProcessor {
 	private final IReductionStepExecutorService myReductionStepExecutorService;
 	private final String myInstanceId;
 	private final JobDefinitionRegistry myJobDefinitionegistry;
+	private final StatusChangeCallback myStatusChangeCallback;
+
+	@FunctionalInterface
+	public interface StatusChangeCallback {
+		void onStatusChange(
+				String theInstanceId,
+				String theDefinitionId,
+				StatusEnum thePrior,
+				StatusEnum theNew,
+				String theMessage);
+	}
 
 	private long myPurgeThreshold = PURGE_THRESHOLD;
 
@@ -75,12 +87,33 @@ public class JobInstanceProcessor {
 			IReductionStepExecutorService theReductionStepExecutorService,
 			JobDefinitionRegistry theJobDefinitionRegistry,
 			@Nonnull IInterceptorService theInterceptorService) {
+		this(
+				theJobPersistence,
+				theBatchJobSender,
+				theInstanceId,
+				theProgressAccumulator,
+				theReductionStepExecutorService,
+				theJobDefinitionRegistry,
+				theInterceptorService,
+				null);
+	}
+
+	public JobInstanceProcessor(
+			IJobPersistence theJobPersistence,
+			BatchJobSender theBatchJobSender,
+			String theInstanceId,
+			JobChunkProgressAccumulator theProgressAccumulator,
+			IReductionStepExecutorService theReductionStepExecutorService,
+			JobDefinitionRegistry theJobDefinitionRegistry,
+			@Nonnull IInterceptorService theInterceptorService,
+			@Nullable StatusChangeCallback theStatusChangeCallback) {
 		myJobPersistence = theJobPersistence;
 		myBatchJobSender = theBatchJobSender;
 		myInstanceId = theInstanceId;
 		myProgressAccumulator = theProgressAccumulator;
 		myReductionStepExecutorService = theReductionStepExecutorService;
 		myJobDefinitionegistry = theJobDefinitionRegistry;
+		myStatusChangeCallback = theStatusChangeCallback;
 		myJobInstanceProgressCalculator = new JobInstanceProgressCalculator(
 				theJobPersistence, theProgressAccumulator, theJobDefinitionRegistry, theInterceptorService);
 		myJobInstanceStatusUpdater = new JobInstanceStatusUpdater(theJobDefinitionRegistry, theInterceptorService);
@@ -155,11 +188,20 @@ public class JobInstanceProcessor {
 		boolean cancelled = created < cutoff;
 		if (cancelled) {
 			ourLog.info("Job {} has been BUILDING for too long, moving to CANCELLED", theInstance.getInstanceId());
+			StatusEnum priorStatus = theInstance.getStatus();
 			myJobPersistence.updateInstance(theInstance.getInstanceId(), instance -> {
 				boolean changed = myJobInstanceStatusUpdater.updateInstanceStatus(instance, StatusEnum.CANCELLED);
 				if (changed) {
 					instance.setErrorMessage("Job has been BUILDING for too long, moving to CANCELLED state");
 					instance.setEndTime(new Date());
+					if (myStatusChangeCallback != null) {
+						myStatusChangeCallback.onStatusChange(
+								instance.getInstanceId(),
+								instance.getJobDefinitionId(),
+								priorStatus,
+								StatusEnum.CANCELLED,
+								"Auto-cancelled: job BUILDING for too long");
+					}
 				}
 				return changed;
 			});
@@ -170,10 +212,19 @@ public class JobInstanceProcessor {
 		if (theInstance.isPendingCancellationRequest()) {
 			String errorMessage = buildCancelledMessage(theInstance);
 			ourLog.info("Job {} moving to CANCELLED", theInstance.getInstanceId());
+			StatusEnum priorStatus = theInstance.getStatus();
 			return myJobPersistence.updateInstance(theInstance.getInstanceId(), instance -> {
 				boolean changed = myJobInstanceStatusUpdater.updateInstanceStatus(instance, StatusEnum.CANCELLED);
 				if (changed) {
 					instance.setErrorMessage(errorMessage);
+					if (myStatusChangeCallback != null) {
+						myStatusChangeCallback.onStatusChange(
+								instance.getInstanceId(),
+								instance.getJobDefinitionId(),
+								priorStatus,
+								StatusEnum.CANCELLED,
+								errorMessage);
+					}
 				}
 				return changed;
 			});

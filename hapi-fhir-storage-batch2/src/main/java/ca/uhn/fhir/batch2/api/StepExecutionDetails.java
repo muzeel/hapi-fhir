@@ -123,6 +123,14 @@ public class StepExecutionDetails<PT extends IModelJson, IT extends IModelJson> 
 	}
 
 	/**
+	 * Returns the current error count for this chunk, used for exponential backoff calculations.
+	 * @return error count (0 if this is the first attempt)
+	 */
+	public int getChunkErrorCount() {
+		return myChunk != null ? myChunk.getErrorCount() : 0;
+	}
+
+	/**
 	 * Returns a new {@link SystemRequestDetails} object pre-populated with the user data from the job instance.
 	 * <b>This is an experimental internal API, use with caution</b>
 	 *

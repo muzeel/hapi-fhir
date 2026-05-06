@@ -494,9 +494,6 @@ public class JobMaintenanceServiceImplTest extends BaseBatch2Test {
 		myJobDefinitionRegistry.addJobDefinition(createJobDefinition());
 		when(myJobPersistence.fetchInstances(anyInt(), eq(0))).thenReturn(List.of(instance));
 		when(myJobPersistence.fetchInstance(eq(INSTANCE_ID))).thenReturn(Optional.of(instance));
-		when(myJobPersistence.fetchAllWorkChunksIterator(eq(INSTANCE_ID), anyBoolean())).thenReturn(chunks.iterator());
-		when(myJobPersistence.fetchAllWorkChunkMetadataForJobInStates(any(Pageable.class), eq(INSTANCE_ID), any()))
-			.thenReturn(getPageOfData(chunks));
 
 		// execute
 		mySvc.runMaintenancePass();

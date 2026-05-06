@@ -1,6 +1,12 @@
 package ca.uhn.fhir.jpa.provider.r4;
 
+import ca.uhn.fhir.batch2.api.IJobStepWorker;
+import ca.uhn.fhir.batch2.api.RunOutcome;
+import ca.uhn.fhir.batch2.api.VoidModel;
+import ca.uhn.fhir.batch2.coordinator.JobDefinitionRegistry;
 import ca.uhn.fhir.batch2.jobs.expunge.DeleteExpungeProvider;
+import ca.uhn.fhir.batch2.model.JobDefinition;
+import ca.uhn.fhir.batch2.model.StatusEnum;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.i18n.Msg;
 import ca.uhn.fhir.interceptor.api.Hook;
@@ -22,7 +28,9 @@ import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
 import ca.uhn.fhir.jpa.entity.Batch2JobInstanceEntity;
 import ca.uhn.fhir.jpa.entity.Batch2WorkChunkEntity;
 import ca.uhn.fhir.jpa.test.BaseJpaR4Test;
+import ca.uhn.fhir.model.api.IModelJson;
 import ca.uhn.fhir.rest.api.CacheControlDirective;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import ca.uhn.fhir.rest.api.Constants;
 import ca.uhn.fhir.rest.api.EncodingEnum;
 import ca.uhn.fhir.rest.api.MethodOutcome;
@@ -122,6 +130,9 @@ public class SystemProviderR4Test extends BaseJpaR4Test {
 	@Autowired
 	private DeleteExpungeProvider myDeleteExpungeProvider;
 
+	@Autowired
+	private JobDefinitionRegistry myJobDefinitionRegistry;
+
 	@SuppressWarnings("deprecation")
 	@AfterEach
 	public void after() {
@@ -135,6 +146,8 @@ public class SystemProviderR4Test extends BaseJpaR4Test {
 
 	@BeforeEach
 	public void beforeStartServer() throws Exception {
+		registerTestJobDefinitions();
+
 		if (ourRestServer == null) {
 			PatientResourceProvider patientRp = new PatientResourceProvider();
 			patientRp.setDao(myPatientDao);
@@ -1117,6 +1130,50 @@ public class SystemProviderR4Test extends BaseJpaR4Test {
 		assertThat(myFhirContext.newJsonParser().encodeResourceToString(cancelResult)).contains("\"valueBoolean\":true");
 
 		runInTransaction(() -> assertTrue(myJobInstanceRepository.findById(instanceId).orElseThrow().isCancelled()));
+	}
+
+	private void registerTestJobDefinitions() {
+		IJobStepWorker<TestJobParams, VoidModel, VoidModel> noopStep = (theStepExecutionDetails, theDataSink) -> new RunOutcome(0);
+
+		if (myJobDefinitionRegistry.getJobDefinition("test-job-def", 1).isEmpty()) {
+			JobDefinition<TestJobParams> testJobDef = JobDefinition
+				.newBuilder()
+				.setJobDefinitionId("test-job-def")
+				.setJobDescription("Test job for batch2 operations")
+				.setJobDefinitionVersion(1)
+				.setParametersType(TestJobParams.class)
+				.addFirstStep("step-1", "Step 1", VoidModel.class, noopStep)
+				.addLastStep("step-2", "Step 2", noopStep)
+				.build();
+			myJobDefinitionRegistry.addJobDefinition(testJobDef);
+		}
+
+		if (myJobDefinitionRegistry.getJobDefinition("ops-job-def", 1).isEmpty()) {
+			JobDefinition<TestJobParams> opsJobDef = JobDefinition
+				.newBuilder()
+				.setJobDefinitionId("ops-job-def")
+				.setJobDescription("Ops job for batch2 operations")
+				.setJobDefinitionVersion(1)
+				.setParametersType(TestJobParams.class)
+				.addFirstStep("step-1", "Step 1", VoidModel.class, noopStep)
+				.addLastStep("step-2", "Step 2", noopStep)
+				.build();
+			myJobDefinitionRegistry.addJobDefinition(opsJobDef);
+		}
+	}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	private static class TestJobParams implements IModelJson {
+		private String myValue;
+
+		public String getValue() {
+			return myValue;
+		}
+
+		public TestJobParams setValue(String theValue) {
+			myValue = theValue;
+			return this;
+		}
 	}
 
 	private Bundle getAllResourcesOfType(String theResourceName) {

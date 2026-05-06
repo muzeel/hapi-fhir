@@ -26,8 +26,11 @@ import ca.uhn.fhir.batch2.channel.BatchJobSender;
 import ca.uhn.fhir.batch2.coordinator.JobDefinitionRegistry;
 import ca.uhn.fhir.batch2.coordinator.WorkChunkProcessor;
 import ca.uhn.fhir.batch2.model.JobInstance;
+import ca.uhn.fhir.batch2.model.StatusEnum;
 import ca.uhn.fhir.i18n.Msg;
+import ca.uhn.fhir.interceptor.api.HookParams;
 import ca.uhn.fhir.interceptor.api.IInterceptorService;
+import ca.uhn.fhir.interceptor.api.Pointcut;
 import ca.uhn.fhir.jpa.api.config.JpaStorageSettings;
 import ca.uhn.fhir.jpa.model.sched.HapiJob;
 import ca.uhn.fhir.jpa.model.sched.IHasScheduledJobs;
@@ -37,6 +40,7 @@ import ca.uhn.fhir.rest.server.exceptions.InternalErrorException;
 import ca.uhn.fhir.util.Logs;
 import com.google.common.annotations.VisibleForTesting;
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.PreDestroy;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.time.DateUtils;
 import org.quartz.JobExecutionContext;
@@ -106,6 +110,9 @@ public class JobMaintenanceServiceImpl implements IJobMaintenanceService, IHasSc
 	private Runnable myMaintenanceJobFinishedCallback = () -> {};
 
 	private boolean myEnabledBool = true;
+
+	private final AtomicBoolean myShutdownRequested = new AtomicBoolean(false);
+	private static final long SHUTDOWN_TIMEOUT_SECONDS = 120;
 
 	/**
 	 * Constructor
@@ -263,6 +270,11 @@ public class JobMaintenanceServiceImpl implements IJobMaintenanceService, IHasSc
 			ourLog.error("Maintenance job is disabled! This will affect all batch2 jobs!");
 		}
 
+		if (myShutdownRequested.get()) {
+			ourLog.info("Shutdown requested, skipping maintenance pass");
+			return;
+		}
+
 		if (!myRunMaintenanceSemaphore.tryAcquire()) {
 			ourLog.debug("Another maintenance pass is already in progress.  Ignoring request.");
 			return;
@@ -277,11 +289,44 @@ public class JobMaintenanceServiceImpl implements IJobMaintenanceService, IHasSc
 		}
 	}
 
+	@PreDestroy
+	public void shutdown() {
+		ourLog.info("Batch2 maintenance service shutdown requested. Waiting for in-flight operations to complete...");
+		myShutdownRequested.set(true);
+
+		try {
+			if (myRunMaintenanceSemaphore.tryAcquire(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+				try {
+					ourLog.info("Batch2 maintenance service shutdown complete. All in-flight operations finished.");
+				} finally {
+					myRunMaintenanceSemaphore.release();
+				}
+			} else {
+				ourLog.warn(
+						"Batch2 maintenance service shutdown timed out after {} seconds. "
+								+ "Some in-flight operations may have been interrupted.",
+						SHUTDOWN_TIMEOUT_SECONDS);
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			ourLog.warn("Batch2 maintenance service shutdown interrupted");
+		}
+	}
+
+	public boolean isShutdownRequested() {
+		return myShutdownRequested.get();
+	}
+
 	private void doMaintenancePass() {
 		myMaintenanceJobStartedCallback.run();
 		Set<String> processedInstanceIds = new HashSet<>();
 		JobChunkProgressAccumulator progressAccumulator = new JobChunkProgressAccumulator();
 		for (int page = 0; ; page++) {
+			if (myShutdownRequested.get()) {
+				ourLog.info("Shutdown requested during maintenance pass, stopping early");
+				break;
+			}
+
 			List<JobInstance> instances = myJobPersistence.fetchInstances(INSTANCES_PER_PASS, page);
 
 			for (JobInstance instance : instances) {
@@ -316,6 +361,19 @@ public class JobMaintenanceServiceImpl implements IJobMaintenanceService, IHasSc
 
 	private JobInstanceProcessor createJobInstanceProcessor(
 			String theInstanceId, JobChunkProgressAccumulator theAccumulator) {
+		JobInstanceProcessor.StatusChangeCallback auditCallback = null;
+		if (myInterceptorService.hasHooks(Pointcut.BATCH2_JOB_STATUS_CHANGE)) {
+			auditCallback = (instanceId, definitionId, priorStatus, newStatus, message) -> {
+				HookParams params = new HookParams()
+						.add(String.class, instanceId)
+						.add(String.class, definitionId)
+						.add(StatusEnum.class, priorStatus)
+						.add(StatusEnum.class, newStatus)
+						.add(String.class, message);
+				myInterceptorService.callHooks(Pointcut.BATCH2_JOB_STATUS_CHANGE, params);
+			};
+		}
+
 		JobInstanceProcessor processor = new JobInstanceProcessor(
 				myJobPersistence,
 				myBatchJobSender,
@@ -323,7 +381,8 @@ public class JobMaintenanceServiceImpl implements IJobMaintenanceService, IHasSc
 				theAccumulator,
 				myReductionStepExecutorService,
 				myJobDefinitionRegistry,
-				myInterceptorService);
+				myInterceptorService,
+				auditCallback);
 		if (myFailedJobLifetimeOverride >= 0) {
 			processor.setPurgeThreshold(myFailedJobLifetimeOverride);
 		}

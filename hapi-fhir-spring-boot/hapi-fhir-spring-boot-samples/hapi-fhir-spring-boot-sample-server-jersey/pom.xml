@@ -6,16 +6,14 @@
 		<groupId>ca.uhn.hapi.fhir</groupId>
 		<artifactId>hapi-fhir-spring-boot-samples</artifactId>
 		<version>8.11.2-SNAPSHOT</version>
-
 	</parent>
 
 	<artifactId>hapi-fhir-spring-boot-sample-server-jersey</artifactId>
-	<name>HAPI-FHIR Spring Boot Sample Server (Jersey)</name>
+	<name>HAPI-FHIR Spring Boot Sample Server (Batch2 Demo)</name>
 
 	<packaging>jar</packaging>
 
 	<dependencies>
-		<!-- Compile -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
@@ -26,7 +24,7 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-jersey</artifactId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>ca.uhn.hapi.fhir</groupId>
@@ -35,33 +33,45 @@
 		</dependency>
 		<dependency>
 			<groupId>ca.uhn.hapi.fhir</groupId>
-			<artifactId>hapi-fhir-jaxrsserver-base</artifactId>
+			<artifactId>hapi-fhir-jpaserver-base</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>ca.uhn.hapi.fhir</groupId>
-			<artifactId>hapi-fhir-validation-resources-dstu3</artifactId>
+			<artifactId>hapi-fhir-jpaserver-model</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>ca.uhn.hapi.fhir</groupId>
-			<artifactId>hapi-fhir-structures-dstu3</artifactId>
+			<artifactId>hapi-fhir-storage-batch2</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-		<!-- Optional -->
+		<dependency>
+			<groupId>ca.uhn.hapi.fhir</groupId>
+			<artifactId>hapi-fhir-structures-r4</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>ca.uhn.hapi.fhir</groupId>
+			<artifactId>hapi-fhir-validation-resources-r4</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>runtime</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-configuration-processor</artifactId>
 			<optional>true</optional>
 		</dependency>
-		<!-- Test -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 
-		<!-- Logging -->
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
@@ -70,11 +80,6 @@
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>log4j-over-slf4j</artifactId>
-		</dependency>
-
 	</dependencies>
 
 	<dependencyManagement>
@@ -109,5 +114,4 @@
 			</plugin>
 		</plugins>
 	</build>
-
 </project>

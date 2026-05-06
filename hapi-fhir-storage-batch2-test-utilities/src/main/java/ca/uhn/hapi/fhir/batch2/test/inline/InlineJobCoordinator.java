@@ -200,6 +200,32 @@ public class InlineJobCoordinator<T extends IModelJson> implements IJobCoordinat
 		// nothing
 	}
 
+	@Override
+	public JobOperationResultJson pauseInstance(String theInstanceId) {
+		JobInstance instance = myJobInstanceMap.get(theInstanceId);
+		if (instance == null) {
+			return JobOperationResultJson.newFailure("Pause", "Instance not found");
+		}
+		if (instance.getStatus() == StatusEnum.PAUSED) {
+			return JobOperationResultJson.newFailure("Pause", "Already paused");
+		}
+		instance.setStatus(StatusEnum.PAUSED);
+		return JobOperationResultJson.newSuccess("Pause", "Paused");
+	}
+
+	@Override
+	public JobOperationResultJson resumeInstance(String theInstanceId) {
+		JobInstance instance = myJobInstanceMap.get(theInstanceId);
+		if (instance == null) {
+			return JobOperationResultJson.newFailure("Resume", "Instance not found");
+		}
+		if (instance.getStatus() == StatusEnum.QUEUED) {
+			return JobOperationResultJson.newFailure("Resume", "Already queued");
+		}
+		instance.setStatus(StatusEnum.QUEUED);
+		return JobOperationResultJson.newSuccess("Resume", "Resumed");
+	}
+
 	@SuppressWarnings("unchecked")
 	private static <T> T unsafeCast(Object theObject) {
 		return (T) theObject;

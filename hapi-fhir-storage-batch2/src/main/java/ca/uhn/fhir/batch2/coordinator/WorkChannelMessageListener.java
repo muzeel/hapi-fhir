@@ -40,12 +40,14 @@ import ca.uhn.fhir.jpa.model.sched.ISchedulerService;
 import ca.uhn.fhir.rest.server.messaging.IMessage;
 import ca.uhn.fhir.util.Logs;
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 /**
@@ -59,6 +61,8 @@ public class WorkChannelMessageListener implements IMessageListener<JobWorkNotif
 	private final IInterceptorBroadcaster myInterceptorBroadcaster;
 	private final JobStepExecutorFactory myJobStepExecutorFactory;
 	private final ISchedulerService myIHapiScheduler;
+
+	private final AtomicBoolean myShutdownRequested = new AtomicBoolean(false);
 
 	public WorkChannelMessageListener(
 			@Nonnull IJobPersistence theJobPersistence,
@@ -95,7 +99,17 @@ public class WorkChannelMessageListener implements IMessageListener<JobWorkNotif
 
 	@Override
 	public void handleMessage(@Nonnull IMessage<JobWorkNotification> theMessage) {
+		if (myShutdownRequested.get()) {
+			ourLog.info("Shutdown requested, rejecting work notification");
+			throw new DelayChunkException(Msg.code(2914) + " Shutdown in progress");
+		}
 		handleWorkChannelMessage(theMessage.getPayload());
+	}
+
+	@PreDestroy
+	public void shutdown() {
+		ourLog.info("Work channel message listener shutdown requested. No new chunks will be processed.");
+		myShutdownRequested.set(true);
 	}
 
 	/**
@@ -265,6 +279,7 @@ public class WorkChannelMessageListener implements IMessageListener<JobWorkNotif
 				case IN_PROGRESS:
 				case ERRORED:
 				case FINALIZE:
+				case PAUSED:
 					// normal processing
 					break;
 

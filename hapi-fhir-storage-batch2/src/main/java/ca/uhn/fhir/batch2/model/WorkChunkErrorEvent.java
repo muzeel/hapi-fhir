@@ -29,6 +29,7 @@ import org.apache.commons.lang3.builder.HashCodeBuilder;
 public class WorkChunkErrorEvent extends BaseWorkChunkEvent {
 
 	private String myErrorMsg;
+	private int myErrorCount;
 
 	public WorkChunkErrorEvent(String theChunkId) {
 		super(theChunkId);
@@ -39,12 +40,27 @@ public class WorkChunkErrorEvent extends BaseWorkChunkEvent {
 		myErrorMsg = theErrorMessage;
 	}
 
+	public WorkChunkErrorEvent(String theChunkId, String theErrorMessage, int theErrorCount) {
+		super(theChunkId);
+		myErrorMsg = theErrorMessage;
+		myErrorCount = theErrorCount;
+	}
+
 	public String getErrorMsg() {
 		return myErrorMsg;
 	}
 
 	public WorkChunkErrorEvent setErrorMsg(String theErrorMsg) {
 		myErrorMsg = theErrorMsg;
+		return this;
+	}
+
+	public int getErrorCount() {
+		return myErrorCount;
+	}
+
+	public WorkChunkErrorEvent setErrorCount(int theErrorCount) {
+		myErrorCount = theErrorCount;
 		return this;
 	}
 
@@ -60,6 +76,7 @@ public class WorkChunkErrorEvent extends BaseWorkChunkEvent {
 				.appendSuper(super.equals(theO))
 				.append(myChunkId, that.myChunkId)
 				.append(myErrorMsg, that.myErrorMsg)
+				.append(myErrorCount, that.myErrorCount)
 				.isEquals();
 	}
 
@@ -69,6 +86,7 @@ public class WorkChunkErrorEvent extends BaseWorkChunkEvent {
 				.appendSuper(super.hashCode())
 				.append(myChunkId)
 				.append(myErrorMsg)
+				.append(myErrorCount)
 				.toHashCode();
 	}
 }

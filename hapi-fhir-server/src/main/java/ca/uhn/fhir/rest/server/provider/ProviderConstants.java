@@ -290,6 +290,11 @@ public class ProviderConstants {
 	 */
 	public static final String OPERATION_BATCH2_JOB_RESUME = "$hapi.fhir.batch2-job-resume";
 
+	/**
+	 * Operation name for fetching Batch2 job audit history.
+	 */
+	public static final String OPERATION_BATCH2_JOB_HISTORY = "$hapi.fhir.batch2-job-history";
+
 	public static final String OPERATION_BATCH2_PARAM_JOB_ID = "jobId";
 	public static final String OPERATION_BATCH2_PARAM_JOB_DEFINITION_ID = "jobDefinitionId";
 	public static final String OPERATION_BATCH2_PARAM_STATUS = "status";
@@ -297,6 +302,7 @@ public class ProviderConstants {
 	public static final String OPERATION_BATCH2_PARAM_TO = "to";
 	public static final String OPERATION_BATCH2_PARAM_PAGE_START = "pageStart";
 	public static final String OPERATION_BATCH2_PARAM_BATCH_SIZE = "batchSize";
+	public static final String OPERATION_BATCH2_PARAM_OPERATION = "operation";
 
 	/**
 	 * Parameter for source reference of the "$hapi.fhir.replace-references" operation

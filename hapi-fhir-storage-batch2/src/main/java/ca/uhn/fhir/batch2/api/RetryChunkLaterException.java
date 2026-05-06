@@ -63,4 +63,48 @@ public class RetryChunkLaterException extends RuntimeException {
 	public Duration getNextPollDuration() {
 		return myNextPollDuration;
 	}
+
+	/**
+	 * Calculates an exponential backoff delay based on the current error count.
+	 * Formula: baseDelay * 2^(errorCount - 1), capped at maxDelay.
+	 *
+	 * @param theErrorCount current error count (1-based)
+	 * @param theBaseDelay base delay for first retry
+	 * @param theMaxDelay maximum delay cap
+	 * @return calculated delay with exponential backoff
+	 */
+	public static Duration calculateExponentialBackoff(int theErrorCount, Duration theBaseDelay, Duration theMaxDelay) {
+		if (theErrorCount <= 0) {
+			return theBaseDelay;
+		}
+		long multiplier = 1L << (theErrorCount - 1);
+		long delayMillis = theBaseDelay.toMillis() * multiplier;
+		long maxMillis = theMaxDelay.toMillis();
+		return Duration.ofMillis(Math.min(delayMillis, maxMillis));
+	}
+
+	/**
+	 * Creates a RetryChunkLaterException with exponential backoff based on error count.
+	 *
+	 * @param theErrorCount current error count (1-based)
+	 * @param theBaseDelay base delay for first retry (default: 1 second)
+	 * @param theMaxDelay maximum delay cap (default: 5 minutes)
+	 * @return new RetryChunkLaterException with calculated delay
+	 */
+	public static RetryChunkLaterException withExponentialBackoff(
+			int theErrorCount, Duration theBaseDelay, Duration theMaxDelay) {
+		Duration delay = calculateExponentialBackoff(theErrorCount, theBaseDelay, theMaxDelay);
+		return new RetryChunkLaterException(delay);
+	}
+
+	/**
+	 * Creates a RetryChunkLaterException with exponential backoff using sensible defaults.
+	 * Base delay: 1 second, Max delay: 5 minutes.
+	 *
+	 * @param theErrorCount current error count (1-based)
+	 * @return new RetryChunkLaterException with calculated delay
+	 */
+	public static RetryChunkLaterException withExponentialBackoff(int theErrorCount) {
+		return withExponentialBackoff(theErrorCount, Duration.ofSeconds(1), Duration.ofMinutes(5));
+	}
 }

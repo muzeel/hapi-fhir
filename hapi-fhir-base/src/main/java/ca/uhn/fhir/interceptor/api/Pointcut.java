@@ -3552,6 +3552,30 @@ public enum Pointcut implements IPointcut {
 			IInterceptorFilterHook.class, "ca.uhn.fhir.batch2.model.JobInstance", "ca.uhn.fhir.batch2.model.WorkChunk"),
 
 	/**
+	 * <b>Batch2 Job Status Change Hook:</b>
+	 * This hook is called whenever a Batch2 job instance changes status (e.g., QUEUED to IN_PROGRESS,
+	 * IN_PROGRESS to COMPLETED, etc.). Can be used for audit logging and notifications.
+	 * <p>
+	 * Hooks may accept the following parameters:
+	 * <ul>
+	 * <li>String - The job instance ID</li>
+	 * <li>String - The job definition ID</li>
+	 * <li>ca.uhn.fhir.batch2.model.StatusEnum - The prior status</li>
+	 * <li>ca.uhn.fhir.batch2.model.StatusEnum - The new status</li>
+	 * <li>String - A message describing the reason for the status change</li>
+	 * </ul>
+	 * </p>
+	 * Hooks should return <code>void</code>.
+	 */
+	BATCH2_JOB_STATUS_CHANGE(
+			void.class,
+			String.class.getName(),
+			String.class.getName(),
+			"ca.uhn.fhir.batch2.model.StatusEnum",
+			"ca.uhn.fhir.batch2.model.StatusEnum",
+			String.class.getName()),
+
+	/**
 	 * <b>Provenance Agents Pointcut:</b>
 	 * This is a pointcut to retrieve data for populating the agent element of a Provenance resource that needs to be created
 	 * as a result of a request, such as a $merge or a $hapi.fhir.replace-references operation.
